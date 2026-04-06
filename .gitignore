@@ -1,3 +1,4 @@
 *.exe
 *.old
 nob.c
+test.c
