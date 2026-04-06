@@ -7,6 +7,11 @@
 #include "nob.h"
 
 // Dynamic Array Helper Macro
+// foreach(element, dynamic_array)
+// {
+//     Type * item = element; // TODO: maybe add type to meta-data and it can auto convert
+//     do_something(item);
+// }
 
 #define foreach(ptr, da)                   \
     for (size_t i = 0; i < da.count; ++ i) \
@@ -15,12 +20,12 @@
 #define foreach_enumerate(i, ptr, da)                   \
     for (size_t i = 0; i < da.count; ++ i)              \
     for (void * ptr = da.items[i]; ptr != NULL; ptr = NULL)
+
 // Constant
 // like resource in Bevy
 #define BACKGROUND GetColor(0x181818FF)
-#define GAMMA 2.2
 
-#define PANEL_WIDTH 400
+#define PANEL_WIDTH 250
 #define WALL_WIDTH  800
 #define WALL_HEIGHT 600
 #define WALL_DEPTH  800
@@ -28,97 +33,30 @@
 #define WINDOW_HEIGHT WALL_HEIGHT
 #define PARTICLE_NUM 100
 #define PARTICLE_RADIUS 30
-#define MAX_VELOCITY 200
+#define MAX_VELOCITY 400
 #define MAX_SIZE 40
 #define MIN_SIZE 20
 
-
-// Entity
-typedef struct {
-    void **items;
-    size_t count;
-    size_t capacity;
-} Entities;
-
-Entities entities = {0};
-
-typedef struct {
-    float x, y, w, h, dx, dy;
-    Color c;
-} Rect;
-
-typedef struct {
-    Vector3 min;
-    Vector3 max;
-    // float lineThick;
-} Box;
-
-Box *wall = &(Box) {
-    .min = (Vector3) {
-        .x=PANEL_WIDTH,
-    },
-    .max = (Vector3) {
-        .x=PANEL_WIDTH+WALL_WIDTH,
-        .y=WALL_HEIGHT,
-        .z=WALL_DEPTH ,
-    }
-};
-    
-// Component
-typedef struct {
-    Vector3 pos;
-    Vector3 vel;
-    Color color;
-} Particle;
-
-
-// System
-
-
-int particle_collide(Particle *a, Particle *b) {
-    // printf("collide detect\n"); return;
-    if (CheckCollisionSpheres(
-        a->pos,
-        PARTICLE_RADIUS,
-        b->pos,
-        PARTICLE_RADIUS
-    )) {
-        Vector3 t = {
-            .x = a->vel.x,
-            .y = a->vel.y,
-            .z = a->vel.z,
-        };
-        
-        a->vel.x = b->vel.x;        
-        a->vel.y = b->vel.y;        
-        a->vel.z = b->vel.z;
-
-        b->vel.x = t.x;
-        b->vel.y = t.y;
-        b->vel.z = t.z;        
-    }
-}
-
-void box_collide(Particle *p, Box *box) {
-    if (p->pos.x < box->min.x || p->pos.x > box->max.x) p->vel.x = - p->vel.x;
-    if (p->pos.y < box->min.y || p->pos.y > box->max.y) p->vel.y = - p->vel.y;
-    if (p->pos.z < box->min.z || p->pos.z > box->max.z) p->vel.z = - p->vel.z;
-}
-
-void statistic() {
-    float v_avg = 0;
-    float v_square_avg = 0;
-    // for ()
-}
-
+// render far particle
+#define GAMMA 2.2
+#define RENDER_DEPTH_FACTOR 1/WALL_DEPTH
+#define DIM_RATIO 0.7
 
 // helper funciton
-
+// vector arithmetic
 Vector3 vec_add(Vector3 a, Vector3 b) {
     return (Vector3) {
         .x = a.x + b.x,
         .y = a.y + b.y,
         .z = a.z + b.z,
+    };
+}
+
+Vector3 vec_sub(Vector3 a, Vector3 b) {
+    return (Vector3) {
+        .x = a.x - b.x,
+        .y = a.y - b.y,
+        .z = a.z - b.z,
     };
 }
 
@@ -130,23 +68,130 @@ Vector3 vec_scale(float scalar, Vector3 v) {
     };
 }
 
-Vector2 screen(Particle *p) {
-    return (Vector2) {
-        .x = (p->pos.x - WALL_WIDTH /2) / (p->pos.z/WALL_DEPTH + 1) + WALL_WIDTH /2,
-        .y = (p->pos.y - WALL_HEIGHT/2) / (p->pos.z/WALL_DEPTH + 1) + WALL_HEIGHT/2,
-    };
+float vec_dot(Vector3 a, Vector3 b) {
+    return a.x*b.x + a.y*b.y + a.z*b.z;
 }
+
+float vec_square_norm(Vector3 v) {
+    return vec_dot(v, v);
+}
+
+float vec_norm(Vector3 v) {
+    return powf(vec_dot(v, v), 0.5);
+}
+
+// Entity
+struct {
+    void **items;
+    size_t count;
+    size_t capacity;
+} entities = {0};
+
+typedef struct {
+    Vector3 min;
+    Vector3 max;
+    // float lineThick;
+} Box;
+
+Box *wall = &(Box) {
+    .min = (Vector3) {
+        .x=-WALL_WIDTH /2,
+        .y=-WALL_HEIGHT/2,
+    },
+    .max = (Vector3) {
+        .x= WALL_WIDTH /2,
+        .y= WALL_HEIGHT/2,
+        .z= WALL_DEPTH   ,
+    }
+};
+    
+// Component
+typedef struct {
+    Vector3 pos;
+    Vector3 vel;
+    Color color;
+} Particle;
+
+void spawn_random_particles(size_t particle_numbers) {
+    for (size_t i = 0; i < particle_numbers; ++i) {
+        
+        // Vector3 new_pos = {
+        //     .x = GetRandomValue(PARTICLE_RADIUS+wall->min.x,wall->max.x-PARTICLE_RADIUS),
+        //     .y = GetRandomValue(PARTICLE_RADIUS+wall->min.y,wall->max.y-PARTICLE_RADIUS),
+        //     .z = GetRandomValue(PARTICLE_RADIUS+wall->min.z,wall->max.z-PARTICLE_RADIUS),
+        // };
+        Particle *p = malloc(sizeof(*p));
+        p->pos = (Vector3){
+            .x = GetRandomValue((PARTICLE_RADIUS+wall->min.x)*0.01,(wall->max.x-PARTICLE_RADIUS)*0.01),
+            .y = GetRandomValue((PARTICLE_RADIUS+wall->min.y)*0.01,(wall->max.y-PARTICLE_RADIUS)*0.01),
+            .z = GetRandomValue((PARTICLE_RADIUS+wall->min.z)*0.01,(wall->max.z-PARTICLE_RADIUS)*0.01),
+        };
+        p->color.r = GetRandomValue(50, 255);
+        p->color.g = GetRandomValue(50, 255);
+        p->color.b = GetRandomValue(50, 255);
+        p->color.a = 255;
+        p->vel = (Vector3) {
+            .x = GetRandomValue(-MAX_VELOCITY, MAX_VELOCITY),
+            .y = GetRandomValue(-MAX_VELOCITY, MAX_VELOCITY),
+            .z = GetRandomValue(-MAX_VELOCITY, MAX_VELOCITY),
+        };
+           
+        da_append(&entities, p);
+    }
+}
+
+
+// System
+
+
+void particle_collide(Particle *a, Particle *b) {
+    Vector3 delta    = vec_sub(a->pos, b->pos);
+    float   dist     = vec_norm(delta);
+    float   min_dist = 2 * PARTICLE_RADIUS;
+    
+    if (dist < min_dist && dist > 0) {
+        Vector3 n = vec_scale(1.0 / dist, delta);
+        float va_para_scalar = vec_dot(a->vel, n);
+        float vb_para_scalar = vec_dot(b->vel, n);
+
+        // only calculate collide velocity when getting close
+        // v_relative < 0
+        if (va_para_scalar - vb_para_scalar < 0) {
+            Vector3 va_para = vec_scale(va_para_scalar, n);
+            Vector3 va_perp = vec_sub  (a->vel, va_para  );
+            Vector3 vb_para = vec_scale(vb_para_scalar, n);
+            Vector3 vb_perp = vec_sub  (b->vel, vb_para  );
+
+            a->vel  = vec_add(va_perp, vb_para);
+            b->vel  = vec_add(vb_perp, va_para);
+        }
+    }
+}
+
+void box_collide(Particle *p, Box *box) {
+    if (p->pos.x < box->min.x || p->pos.x > box->max.x) p->vel.x = -p->vel.x;
+    if (p->pos.y < box->min.y || p->pos.y > box->max.y) p->vel.y = -p->vel.y;
+    if (p->pos.z < box->min.z || p->pos.z > box->max.z) p->vel.z = -p->vel.z;
+}
+
+void statistic() {
+    float v_avg = 0;
+    float v_square_avg = 0;
+    // for ()
+}
+
+
+// Render
+
 
 Color depth_color(Color origin, float z) {
     return (Color) {
-        .r = (unsigned char)((double)(origin.r - 0x18) * pow((1.0 - (double)z/WALL_DEPTH), GAMMA)) + 0x18,
-        .g = (unsigned char)((double)(origin.g - 0x18) * pow((1.0 - (double)z/WALL_DEPTH), GAMMA)) + 0x18,
-        .b = (unsigned char)((double)(origin.b - 0x18) * pow((1.0 - (double)z/WALL_DEPTH), GAMMA)) + 0x18,
+        .r = (unsigned char)((float)(origin.r - 0x18) * powf((1.0 - z/WALL_DEPTH*DIM_RATIO), GAMMA)) + 0x18,
+        .g = (unsigned char)((float)(origin.g - 0x18) * powf((1.0 - z/WALL_DEPTH*DIM_RATIO), GAMMA)) + 0x18,
+        .b = (unsigned char)((float)(origin.b - 0x18) * powf((1.0 - z/WALL_DEPTH*DIM_RATIO), GAMMA)) + 0x18,
         .a = origin.a,
     };
 }
-
-// Render
 
 int particle_depth_compare(const void *a, const void *b) {
     const Particle *p1 = *(const Particle **)a;
@@ -162,19 +207,27 @@ bool pause = false;
 
 void update() {
     float dt = GetFrameTime();
-    foreach_enumerate(i, entity, entities) {
+    foreach_enumerate(i, e, entities) {
         if (dt > 0.1) continue; // block when render block
-        Particle *p = entity;
+        Particle *p = e;
         for (size_t j=i+1; j < entities.count; ++j) {
             Particle *p2 = entities.items[j];
             particle_collide(p, p2);            
         }
         box_collide(p, wall);
-        p->pos= vec_add(
+        p->pos = vec_add(
             p->pos,
             vec_scale(dt, p->vel)
         );
     }
+}
+
+// particle project to screen
+Vector2 screen(Particle *p) {
+    return (Vector2) {
+        .x = p->pos.x / (p->pos.z*RENDER_DEPTH_FACTOR + 1) + WALL_WIDTH /2 + PANEL_WIDTH,
+        .y = p->pos.y / (p->pos.z*RENDER_DEPTH_FACTOR + 1) + WALL_HEIGHT/2,
+    };
 }
 
 void render() {
@@ -185,7 +238,7 @@ void render() {
         Particle *p = entity;
         DrawCircleV(
             screen(p),
-            PARTICLE_RADIUS/(p->pos.z/WALL_DEPTH  + 1),
+            PARTICLE_RADIUS/(p->pos.z*RENDER_DEPTH_FACTOR + 1),
             depth_color(p->color, p->pos.z)
         );
     }
@@ -194,49 +247,21 @@ void render() {
 int main(void) {
     InitWindow(WINDOW_WIDTH, WINDOW_HEIGHT, "Ideal GAS in Raylib");
     // spawn entities
-    for (int i = 0; i < PARTICLE_NUM; ++i) {
-        Particle *p = malloc(sizeof(Particle));
-        
-        p->color.r = GetRandomValue(50, 255);
-        p->color.g = GetRandomValue(50, 255);
-        p->color.b = GetRandomValue(50, 255);
-        p->color.a = 255;
-        p->pos = (Vector3) {
-            .x = GetRandomValue(PARTICLE_RADIUS+wall->min.x,wall->max.x-PARTICLE_RADIUS),
-            .y = GetRandomValue(PARTICLE_RADIUS+wall->min.y,wall->max.y-PARTICLE_RADIUS),
-            .z = GetRandomValue(PARTICLE_RADIUS+wall->min.z,wall->max.z-PARTICLE_RADIUS),
-        };
+    spawn_random_particles(PARTICLE_NUM);
 
-        // check init collide
-        
-        
-        p->vel = (Vector3) {
-            .x = GetRandomValue(-MAX_VELOCITY, MAX_VELOCITY),
-            .y = GetRandomValue(-MAX_VELOCITY, MAX_VELOCITY),
-            .z = GetRandomValue(-MAX_VELOCITY, MAX_VELOCITY),
-        };
-           
-        da_append(&entities, p);
-    }
     SetTargetFPS(60);
-
-    // render_sort();
-    // foreach(e, entities) {
-    //     Particle *p = e;
-    //     printf("depth: %f\n", p->pos.z);
-    // }
-
     while(!WindowShouldClose()) {
         BeginDrawing();
         // ClearBackground(RAYWHITE);
         ClearBackground(BACKGROUND);
-        DrawText("Idal Gas Simulator", 20, 20, 20, WHITE);
+        DrawText("Ideal Gas Simulator", 20, 20, 20, WHITE);
         // if (IsKeyPressed(KEY_P)) pause = !pause;
         update();
         render();
         EndDrawing();
     }
     CloseWindow();
+    
     da_free(entities);
     return 0;
 }
