@@ -24,10 +24,11 @@ int main(int argc, char **argv) {
     Cmd cmd = {0};
     if (needs_rebuild1(output_path, source_path)) {
 
-        cmd_append(&cmd, "../third-party/w64devkit/bin/gcc.exe");
+        // cmd_append(&cmd, "../third-party/w64devkit/bin/gcc.exe");
+        cmd_append(&cmd, "gcc.exe");
         cmd_append(&cmd, "-Wall", "-Wextra", "-o", output_path, source_path);
-        cmd_append(&cmd, "-I", "../third-party/raylib-5.5_win64_mingw-w64/include");
-        cmd_append(&cmd, "-L", "../third-party/raylib-5.5_win64_mingw-w64/lib");
+        cmd_append(&cmd, "-I", "./raylib-5.5_win64_mingw-w64/include");
+        cmd_append(&cmd, "-L", "./raylib-5.5_win64_mingw-w64/lib");
         cmd_append(&cmd, "-l", "raylib");
         cmd_append(&cmd, "-l", "gdi32");
         cmd_append(&cmd, "-l", "winmm");
