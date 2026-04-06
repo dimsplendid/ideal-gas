@@ -172,9 +172,9 @@ void particle_collide(Particle *a, Particle *b) {
 }
 
 void box_collide(Particle *p, Box *box) {
-    if (p->pos.x-PARTICLE_RADIUS < box->min.x && p->vel.x < 0 || p->pos.x+PARTICLE_RADIUS > box->max.x && p->vel.x > 0) p->vel.x = -p->vel.x;
-    if (p->pos.y-PARTICLE_RADIUS < box->min.y && p->vel.y < 0 || p->pos.y+PARTICLE_RADIUS > box->max.y && p->vel.y > 0) p->vel.y = -p->vel.y;
-    if (p->pos.z-PARTICLE_RADIUS < box->min.z && p->vel.z < 0 || p->pos.z+PARTICLE_RADIUS > box->max.z && p->vel.z > 0) p->vel.z = -p->vel.z;
+    if ((p->pos.x-PARTICLE_RADIUS < box->min.x && p->vel.x < 0) || (p->pos.x+PARTICLE_RADIUS > box->max.x && p->vel.x > 0)) p->vel.x = -p->vel.x;
+    if ((p->pos.y-PARTICLE_RADIUS < box->min.y && p->vel.y < 0) || (p->pos.y+PARTICLE_RADIUS > box->max.y && p->vel.y > 0)) p->vel.y = -p->vel.y;
+    if ((p->pos.z-PARTICLE_RADIUS < box->min.z && p->vel.z < 0) || (p->pos.z+PARTICLE_RADIUS > box->max.z && p->vel.z > 0)) p->vel.z = -p->vel.z;
 }
 
 typedef struct {
