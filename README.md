@@ -2,7 +2,7 @@
 
 Simple simulator that using raylib to render.
 
-[raylib](https://github.com/raysan5/raylib/)
+[raylib 5.5](https://github.com/raysan5/raylib/)
 
 ## Build
 
