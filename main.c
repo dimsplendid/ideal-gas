@@ -13,26 +13,25 @@
 //     do_something(item);
 // }
 
-#define foreach(ptr, da)                   \
-    for (size_t i = 0; i < da.count; ++ i) \
+#define foreach(ptr, da)                                    \
+    for (size_t i = 0; i < da.count; ++ i)                  \
     for (void * ptr = da.items[i]; ptr != NULL; ptr = NULL)
 
-#define foreach_enumerate(i, ptr, da)                   \
-    for (size_t i = 0; i < da.count; ++ i)              \
+#define foreach_enumerate(i, ptr, da)                       \
+    for (size_t i = 0; i < da.count; ++ i)                  \
     for (void * ptr = da.items[i]; ptr != NULL; ptr = NULL)
 
 // Constant
 // like resource in Bevy
-#define BACKGROUND GetColor(0x181818FF)
 
+#define PARTICLE_NUM 50
+#define PARTICLE_RADIUS 30
 #define PANEL_WIDTH 250
 #define WALL_WIDTH  800
 #define WALL_HEIGHT 600
 #define WALL_DEPTH  800
 #define WINDOW_WIDTH PANEL_WIDTH+WALL_WIDTH
 #define WINDOW_HEIGHT WALL_HEIGHT
-#define PARTICLE_NUM 100
-#define PARTICLE_RADIUS 30
 #define MAX_VELOCITY 400
 #define MAX_SIZE 40
 #define MIN_SIZE 20
@@ -41,6 +40,8 @@
 #define GAMMA 2.2
 #define RENDER_DEPTH_FACTOR 1/WALL_DEPTH
 #define DIM_RATIO 0.7
+
+#define BACKGROUND GetColor(0x181818FF)
 
 // helper funciton
 // vector arithmetic
@@ -93,10 +94,12 @@ typedef struct {
     // float lineThick;
 } Box;
 
+// TODO: also add the box to entities and render
 Box *wall = &(Box) {
     .min = (Vector3) {
         .x=-WALL_WIDTH /2,
         .y=-WALL_HEIGHT/2,
+        .z=0             ,
     },
     .max = (Vector3) {
         .x= WALL_WIDTH /2,
@@ -143,7 +146,7 @@ void spawn_random_particles(size_t particle_numbers) {
 
 // System
 
-
+// perfect elastic impact(after all, it's ideal gas...)
 void particle_collide(Particle *a, Particle *b) {
     Vector3 delta    = vec_sub(a->pos, b->pos);
     float   dist     = vec_norm(delta);
@@ -169,15 +172,36 @@ void particle_collide(Particle *a, Particle *b) {
 }
 
 void box_collide(Particle *p, Box *box) {
-    if (p->pos.x < box->min.x || p->pos.x > box->max.x) p->vel.x = -p->vel.x;
-    if (p->pos.y < box->min.y || p->pos.y > box->max.y) p->vel.y = -p->vel.y;
-    if (p->pos.z < box->min.z || p->pos.z > box->max.z) p->vel.z = -p->vel.z;
+    if (p->pos.x-PARTICLE_RADIUS < box->min.x && p->vel.x < 0 || p->pos.x+PARTICLE_RADIUS > box->max.x && p->vel.x > 0) p->vel.x = -p->vel.x;
+    if (p->pos.y-PARTICLE_RADIUS < box->min.y && p->vel.y < 0 || p->pos.y+PARTICLE_RADIUS > box->max.y && p->vel.y > 0) p->vel.y = -p->vel.y;
+    if (p->pos.z-PARTICLE_RADIUS < box->min.z && p->vel.z < 0 || p->pos.z+PARTICLE_RADIUS > box->max.z && p->vel.z > 0) p->vel.z = -p->vel.z;
 }
 
-void statistic() {
-    float v_avg = 0;
-    float v_square_avg = 0;
-    // for ()
+typedef struct {
+    float v_square_avg;
+    float v_avg;
+    float temperature;
+    float kinetic_energy;
+} Statistic;
+
+Statistic statistic = {0};
+
+void analysis() {
+    float v_square_sum = 0;
+    float v_sum = 0;
+    foreach(e, entities) {
+        Particle *p = e;
+        v_square_sum += vec_square_norm(p->vel);
+        v_sum += vec_norm(p->vel);
+    }
+    float v_square_avg = v_square_sum / PARTICLE_NUM;
+    float v_avg        = v_sum        / PARTICLE_NUM;
+    statistic = (Statistic) {
+        .v_square_avg   = v_square_avg,
+        .v_avg          = v_avg,
+        .temperature    = v_square_avg,
+        .kinetic_energy = v_square_avg,
+    };
 }
 
 
@@ -230,6 +254,7 @@ Vector2 screen(Particle *p) {
     };
 }
 
+char buf[256] = {0};
 void render() {
     // particle -> raylib: DrawCircle
     // box      -> raylib: DrawRectangle
@@ -242,6 +267,12 @@ void render() {
             depth_color(p->color, p->pos.z)
         );
     }
+    // Panel
+    DrawText("Ideal Gas Simulator", 20, 20, 20, WHITE);
+    snprintf(buf, sizeof(buf), "<V2> = %.2f", statistic.v_square_avg);
+    DrawText(buf, 20, 50, 20, WHITE);
+    snprintf(buf, sizeof(buf), "<V>  = %.2f", statistic.v_avg);
+    DrawText(buf, 20, 80, 20, WHITE);
 }
 
 int main(void) {
@@ -254,9 +285,9 @@ int main(void) {
         BeginDrawing();
         // ClearBackground(RAYWHITE);
         ClearBackground(BACKGROUND);
-        DrawText("Ideal Gas Simulator", 20, 20, 20, WHITE);
         // if (IsKeyPressed(KEY_P)) pause = !pause;
         update();
+        analysis();
         render();
         EndDrawing();
     }
