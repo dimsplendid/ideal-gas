@@ -9,8 +9,8 @@
 // Constant
 // like resource in Bevy
 
-#define PARTICLE_NUM        50
-#define PARTICLE_RADIUS     30
+#define PARTICLE_NUM        100
+#define PARTICLE_RADIUS     20
 #define MAX_VELOCITY        400
 
 // Layout
@@ -69,17 +69,12 @@ float vec_norm(Vector3 v) {
 }
 
 // Entity
-struct {
-    void **items;
-    size_t count;
-    size_t capacity;
-} entities = {0};
-
 typedef struct {
     Vector3 min;
     Vector3 max;
     // float lineThick;
 } Box;
+
 
 // TODO: also add the box to entities and render
 Box *wall = &(Box) {
@@ -102,24 +97,44 @@ typedef struct {
     Color color;
 } Particle;
 
+// try more ecs method
+struct {
+    // index indicate an entity
+    // only particle for now, maybe using Union type sys later
+    // or lots of array to handle component?
+    Particle *items;
+    size_t count;
+    size_t capacity;
+} particles = {0};
+
+// tracking render order
+struct {
+    size_t *items;
+    size_t count;
+    size_t capacity;
+} render_order = {0};
+
 void spawn_random_particles(size_t particle_numbers) {
     for (size_t i = 0; i < particle_numbers; ++i) {
-        Particle *p = malloc(sizeof(*p));
-        p->pos = (Vector3){
+        Particle p = {0};
+        p.pos = (Vector3){
             .x = GetRandomValue((PARTICLE_RADIUS+wall->min.x)*0.01,(wall->max.x-PARTICLE_RADIUS)*0.01),
             .y = GetRandomValue((PARTICLE_RADIUS+wall->min.y)*0.01,(wall->max.y-PARTICLE_RADIUS)*0.01),
             .z = GetRandomValue((PARTICLE_RADIUS+wall->min.z)*0.01,(wall->max.z-PARTICLE_RADIUS)*0.01),
         };
-        p->color.r = GetRandomValue(50, 255);
-        p->color.g = GetRandomValue(50, 255);
-        p->color.b = GetRandomValue(50, 255);
-        p->color.a = 255;
-        p->vel = (Vector3) {
+        p.vel = (Vector3) {
             .x = GetRandomValue(-MAX_VELOCITY, MAX_VELOCITY),
             .y = GetRandomValue(-MAX_VELOCITY, MAX_VELOCITY),
             .z = GetRandomValue(-MAX_VELOCITY, MAX_VELOCITY),
         };
-        da_append(&entities, p);
+        p.color = (Color) {
+            .r = GetRandomValue(50, 255),
+            .g = GetRandomValue(50, 255),
+            .b = GetRandomValue(50, 255),
+            .a = 255,
+        };
+        da_append(&particles, p);
+        da_append(&render_order, i);
     }
 }
 
@@ -140,10 +155,10 @@ void particle_collide(Particle *a, Particle *b) {
         // only calculate collide velocity when getting close
         // v_relative < 0
         if (va_para_scalar - vb_para_scalar < 0) {
-            Vector3 va_para = vec_scale(va_para_scalar, n);
-            Vector3 va_perp = vec_sub  (a->vel, va_para  );
-            Vector3 vb_para = vec_scale(vb_para_scalar, n);
-            Vector3 vb_perp = vec_sub  (b->vel, vb_para  );
+            Vector3 va_para = vec_scale(va_para_scalar, n      );
+            Vector3 va_perp = vec_sub  (a->vel        , va_para);
+            Vector3 vb_para = vec_scale(vb_para_scalar, n      );
+            Vector3 vb_perp = vec_sub  (b->vel        , vb_para);
 
             a->vel  = vec_add(va_perp, vb_para);
             b->vel  = vec_add(vb_perp, va_para);
@@ -169,8 +184,7 @@ Statistic statistic = {0};
 void analysis() {
     float v_square_sum = 0;
     float v_sum = 0;
-    da_foreach(void *, e, &entities) {
-        Particle *p = *e;
+    da_foreach(Particle, p, &particles) {
         v_square_sum += vec_square_norm(p->vel);
         v_sum += vec_norm(p->vel);
     }
@@ -226,13 +240,15 @@ Color depth_color(Color origin, float z) {
 // sense, just cover on it :)
 // sorted by depth to mimic the depth cover effect
 int particle_depth_compare(const void *a, const void *b) {
-    const Particle *p1 = *(const Particle **)a;
-    const Particle *p2 = *(const Particle **)b;
-    if (p1->pos.z == p2->pos.z) return 0;
-    return p1->pos.z > p2->pos.z ? -1 : 1;
+    const Particle p1 = particles.items[*(const size_t *)a];
+    const Particle p2 = particles.items[*(const size_t *)b];
+    if (p1.pos.z == p2.pos.z) return 0;
+    return p1.pos.z > p2.pos.z ? -1 : 1;
 }
+
+// may cause tracking problem if track particle by id;
 void render_sort() {
-    qsort(entities.items, entities.count, sizeof(void*), particle_depth_compare);
+    qsort(render_order.items, render_order.count, sizeof(void*), particle_depth_compare);
 }
 
 bool pause = false;
@@ -240,13 +256,12 @@ bool pause = false;
 void update() {
     if (pause) return; // <- control by events
     float dt = GetFrameTime();
-    da_foreach(void *, e, &entities) {
+    da_foreach(Particle, p, &particles) {
         if (dt > 0.1) continue; // block when render block
-        size_t i = e - entities.items;
-        Particle *p = *e;
-        for (size_t j=i+1; j < entities.count; ++j) {
-            Particle *p2 = entities.items[j];
-            particle_collide(p, p2);            
+        size_t i = p - particles.items;
+        for (size_t j=i+1; j < particles.count; ++j) {
+            Particle *p2 = &particles.items[j];
+            particle_collide(p, p2);          
         }
         box_collide(p, wall);
         p->pos = vec_add(
@@ -269,8 +284,8 @@ void render() {
     // box      -> raylib: DrawRectangle
     render_sort();
     ClearBackground(BACKGROUND);
-    da_foreach(void *, entity, &entities) {
-        Particle *p = *entity;
+    da_foreach(size_t, index, &render_order) {
+        Particle *p = &particles.items[*index];
         DrawCircleV(
             screen(p),
             PARTICLE_RADIUS/(p->pos.z*RENDER_DEPTH_FACTOR + 1),
@@ -302,6 +317,6 @@ int main(void) {
     }
     CloseWindow();
     
-    da_free(entities);
+    da_free(particles);
     return 0;
 }
