@@ -6,20 +6,6 @@
 
 #include "nob.h"
 
-// Dynamic Array Helper Macro
-// foreach(element, dynamic_array)
-// {
-//     Type * item = element; // TODO: maybe add type to meta-data and it can auto convert
-//     do_something(item);
-// }
-#define foreach(ptr, da)                                    \
-    for (size_t i = 0; i < da.count; ++ i)                  \
-    for (void * ptr = da.items[i]; ptr != NULL; ptr = NULL)
-
-#define foreach_enumerate(i, ptr, da)                       \
-    for (size_t i = 0; i < da.count; ++ i)                  \
-    for (void * ptr = da.items[i]; ptr != NULL; ptr = NULL)
-
 // Constant
 // like resource in Bevy
 
@@ -183,8 +169,8 @@ Statistic statistic = {0};
 void analysis() {
     float v_square_sum = 0;
     float v_sum = 0;
-    foreach(e, entities) {
-        Particle *p = e;
+    da_foreach(void *, e, &entities) {
+        Particle *p = *e;
         v_square_sum += vec_square_norm(p->vel);
         v_sum += vec_norm(p->vel);
     }
@@ -203,7 +189,24 @@ typedef struct {
     Color color;
     float thick;
 } Style;
-void arrow(Vector2 start, Vector2 end, Style s) {
+
+typedef struct {
+    Vector2 begin;
+    Vector2 end;
+    Style style;
+} Arrow;
+
+typedef struct {
+    float *val;
+    size_t count;
+    size_t capacity;    
+} Array;
+
+typedef struct {
+} Figure;
+
+void draw_arrow(Arrow a) {
+    UNUSED(a);
     TODO("");
 }
 
@@ -237,9 +240,10 @@ bool pause = false;
 void update() {
     if (pause) return; // <- control by events
     float dt = GetFrameTime();
-    foreach_enumerate(i, e, entities) {
+    da_foreach(void *, e, &entities) {
         if (dt > 0.1) continue; // block when render block
-        Particle *p = e;
+        size_t i = e - entities.items;
+        Particle *p = *e;
         for (size_t j=i+1; j < entities.count; ++j) {
             Particle *p2 = entities.items[j];
             particle_collide(p, p2);            
@@ -265,8 +269,8 @@ void render() {
     // box      -> raylib: DrawRectangle
     render_sort();
     ClearBackground(BACKGROUND);
-    foreach(entity, entities) {
-        Particle *p = entity;
+    da_foreach(void *, entity, &entities) {
+        Particle *p = *entity;
         DrawCircleV(
             screen(p),
             PARTICLE_RADIUS/(p->pos.z*RENDER_DEPTH_FACTOR + 1),
