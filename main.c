@@ -10,7 +10,7 @@
 // like resource in Bevy
 #define PARTICLE_NUM        200
 #define PARTICLE_RADIUS     30
-#define MAX_VELOCITY        400
+#define MAX_VELOCITY        200
 
 #define GRID_SIZE           32
 #define CELL_NUM            GRID_SIZE*GRID_SIZE*GRID_SIZE
@@ -333,15 +333,12 @@ void update() {
                     particle_collide(particle1, particles.items+id2);          
                 }
             }
-            box_collide(particle1, wall);
-            particle1->pos = vec_add(
-                particle1->pos,
-                vec_scale(dt, particle1->vel)
-            );
         }
     }
     grid_reset();
     da_foreach(Particle, p, &particles) {
+        box_collide(p, wall);
+        p->pos = vec_add(p->pos,vec_scale(dt, p->vel));
         grid_update(p-particles.items, &p->pos);
     }
 }
