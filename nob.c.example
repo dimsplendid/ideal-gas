@@ -26,13 +26,15 @@ int main(int argc, char **argv) {
 
         // cmd_append(&cmd, "../third-party/w64devkit/bin/gcc.exe");
         cmd_append(&cmd, "gcc.exe");
-        cmd_append(&cmd, "-Wall", "-Wextra", "-o", output_path, source_path);
+        cmd_append(&cmd, "-Wall", "-Wextra", "-o", output_path);
+        cmd_append(&cmd, "-static", source_path);
         cmd_append(&cmd, "-I", "./raylib-5.5_win64_mingw-w64/include");
         cmd_append(&cmd, "-L", "./raylib-5.5_win64_mingw-w64/lib");
         cmd_append(&cmd, "-l", "raylib");
         cmd_append(&cmd, "-l", "gdi32");
         cmd_append(&cmd, "-l", "winmm");
-    
+        cmd_append(&cmd, "-O2");
+            
         if (!cmd_run(&cmd)) return 1;
     } else {
         nob_log(INFO, "%s is up to date", output_path);

@@ -8,10 +8,10 @@
 
 // Constant
 // like resource in Bevy
-
-#define PARTICLE_NUM        1000
-#define PARTICLE_RADIUS     10
+#define PARTICLE_NUM        500
+#define PARTICLE_RADIUS     30
 #define MAX_VELOCITY        400
+
 #define GRID_SIZE           32
 #define CELL_NUM            GRID_SIZE*GRID_SIZE*GRID_SIZE
 
@@ -67,7 +67,7 @@ float vec_square_norm(Vector3 v) {
 }
 
 float vec_norm(Vector3 v) {
-    return powf(vec_dot(v, v), 0.5);
+    return sqrtf(vec_dot(v, v));
 }
 
 // Entity
@@ -194,6 +194,7 @@ void spawn_random_particles(size_t particle_numbers) {
         da_append(&render_order, i);
         grid_update(i, &p.pos);
     }
+        
     neighbor_cells_init();
 }
 
@@ -202,26 +203,26 @@ void spawn_random_particles(size_t particle_numbers) {
 
 // perfestic_reset impact(after all, it's ideal gas...)
 void particle_collide(Particle *a, Particle *b) {
-    Vector3 delta    = vec_sub(a->pos, b->pos);
-    float   dist     = vec_norm(delta);
-    float   min_dist = 2 * PARTICLE_RADIUS;
-
-
-    if (dist < min_dist && dist > 0) {
-        Vector3 n = vec_scale(1.0 / dist, delta);
-        float va_para_scalar = vec_dot(a->vel, n);
-        float vb_para_scalar = vec_dot(b->vel, n);
-
+    Vector3 delta       = vec_sub(b->pos, a->pos);
+    float   dist_sq     = vec_square_norm(delta);
+    float   min_dist_sq = 4 * PARTICLE_RADIUS * PARTICLE_RADIUS;
+    
+    if (dist_sq < min_dist_sq) {
+        Vector3 v_rel = vec_sub(b->vel, a->vel); // relative velocity
+        float v_dot_delta = vec_dot(v_rel, delta);
         // only calculate collide velocity when getting close
-        // v_relative < 0
-        if (va_para_scalar - vb_para_scalar < 0) {
-            Vector3 va_para = vec_scale(va_para_scalar, n      );
-            Vector3 va_perp = vec_sub  (a->vel        , va_para);
-            Vector3 vb_para = vec_scale(vb_para_scalar, n      );
-            Vector3 vb_perp = vec_sub  (b->vel        , vb_para);
+        if (v_dot_delta < 0) {
+            float scalar = v_dot_delta / dist_sq;
+            Vector3 impulse = vec_scale(scalar, delta);
 
-            a->vel  = vec_add(va_perp, vb_para);
-            b->vel  = vec_add(vb_perp, va_para);
+            a->vel  = vec_add(a->vel, impulse);
+            b->vel  = vec_sub(b->vel, impulse);
+            // overlap modified
+            float dist = sqrtf(dist_sq);
+            float overlap = 2 * PARTICLE_RADIUS - dist;
+            Vector3 separation = vec_scale(overlap * 0.5 / dist, delta);
+            a->pos = vec_sub(a->pos, separation);
+            b->pos = vec_add(b->pos, separation);
         }
     }
 }
