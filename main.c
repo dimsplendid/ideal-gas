@@ -9,10 +9,11 @@
 // Constant
 // like resource in Bevy
 
-#define PARTICLE_NUM        100
-#define PARTICLE_RADIUS     20
+#define PARTICLE_NUM        1000
+#define PARTICLE_RADIUS     10
 #define MAX_VELOCITY        400
 #define GRID_SIZE           32
+#define CELL_NUM            GRID_SIZE*GRID_SIZE*GRID_SIZE
 
 // Layout
 #define PANEL_WIDTH         250
@@ -118,12 +119,57 @@ struct {
 // tracking particle in grid
 // divide space into 32 * 32 * 32 grid
 typedef struct {
-    size_t *items;
+    size_t *items; // particle ids
     size_t count;
     size_t capacity;
-} SubSpace;
-SubSpace grid[GRID_SIZE * GRID_SIZE * GRID_SIZE] = {0};
-void update_grid() {}
+} Cell;
+Cell grid[GRID_SIZE * GRID_SIZE * GRID_SIZE] = {0};
+// grid(i, j, k) = grid[i * size^2 + j * size + k] // map 3D to 1D
+// i, j, k <- (int) (W, H, D) / grid_size
+void grid_update(size_t id, Vector3 *pos) {
+    float cell_w = (float) WALL_WIDTH  / GRID_SIZE;
+    float cell_h = (float) WALL_HEIGHT / GRID_SIZE;
+    float cell_d = (float) WALL_DEPTH  / GRID_SIZE;
+    int i = (pos->x - wall->min.x) / cell_w;
+    int j = (pos->y - wall->min.y) / cell_h;
+    int k = (pos->z - wall->min.z) / cell_d;
+    
+    if (i < 0) i = 0; else if (i >= GRID_SIZE) i = GRID_SIZE - 1;
+    if (j < 0) j = 0; else if (j >= GRID_SIZE) j = GRID_SIZE - 1;
+    if (k < 0) k = 0; else if (k >= GRID_SIZE) k = GRID_SIZE - 1;
+
+    int idx = i * GRID_SIZE * GRID_SIZE + j * GRID_SIZE + k;
+    if (idx >= 0 && idx < CELL_NUM) da_append(&grid[idx], id);
+}
+void grid_reset() {
+    for (size_t idx = 0; idx < CELL_NUM; ++idx) {
+        Cell * s = &grid[idx];
+        s->count = 0;
+    }
+}
+
+typedef struct {
+    size_t *items; // cell id
+    size_t count;
+    size_t capacity;
+} CellId; // surrounding cell index of cell
+CellId neighbor_cells[GRID_SIZE * GRID_SIZE * GRID_SIZE] = {0};
+
+void neighbor_cells_init() {
+    for (size_t idx = 0; idx < CELL_NUM; ++idx) {
+        int i = idx / GRID_SIZE / GRID_SIZE;
+        int j = idx / GRID_SIZE % GRID_SIZE;
+        int k = idx % GRID_SIZE;
+        da_append(neighbor_cells+idx, idx);
+        for (int ni = i-1; ni <= i+1; ++ni) { if (ni == -1 || ni == GRID_SIZE) continue;
+        for (int nj = j-1; nj <= j+1; ++nj) { if (nj == -1 || nj == GRID_SIZE) continue;
+        for (int nk = k-1; nk <= k+1; ++nk) { if (nk == -1 || nk == GRID_SIZE) continue;
+            size_t nidx = ni * GRID_SIZE * GRID_SIZE + nj * GRID_SIZE + nk;
+            if (nidx == idx) continue;
+            da_append(neighbor_cells+idx, nidx);
+        }}}
+    }
+}
 
 void spawn_random_particles(size_t particle_numbers) {
     for (size_t i = 0; i < particle_numbers; ++i) {
@@ -146,18 +192,21 @@ void spawn_random_particles(size_t particle_numbers) {
         };
         da_append(&particles, p);
         da_append(&render_order, i);
+        grid_update(i, &p.pos);
     }
+    neighbor_cells_init();
 }
 
 
 // System
 
-// perfect elastic impact(after all, it's ideal gas...)
+// perfestic_reset impact(after all, it's ideal gas...)
 void particle_collide(Particle *a, Particle *b) {
     Vector3 delta    = vec_sub(a->pos, b->pos);
     float   dist     = vec_norm(delta);
     float   min_dist = 2 * PARTICLE_RADIUS;
-    
+
+
     if (dist < min_dist && dist > 0) {
         Vector3 n = vec_scale(1.0 / dist, delta);
         float va_para_scalar = vec_dot(a->vel, n);
@@ -175,12 +224,6 @@ void particle_collide(Particle *a, Particle *b) {
             b->vel  = vec_add(vb_perp, va_para);
         }
     }
-}
-
-void particle_collide_v2(Particle *a) {
-    size_t index = a - particles.items;
-    
-    TraceLog(LOG_INFO, "particle %zu", index);
 }
 
 void box_collide(Particle *p, Box *box) {
@@ -273,18 +316,32 @@ bool pause = false;
 void update() {
     if (pause) return; // <- control by events
     float dt = GetFrameTime();
-    da_foreach(Particle, p, &particles) {
+    for (size_t i = 0; i < CELL_NUM; ++i) {
         if (dt > 0.1) continue; // block when render block
-        size_t i = p - particles.items;
-        for (size_t j=i+1; j < particles.count; ++j) {
-            Particle *p2 = &particles.items[j];
-            particle_collide(p, p2);          
+        Cell * cell = &grid[i];
+        // TODO: neighbor_cells generate at the beginning
+        CellId * neighbor_cell = &neighbor_cells[i];
+        da_foreach(size_t, p1, cell) {
+            size_t id1 = *p1;
+            Particle * particle1 = particles.items+id1;
+            da_foreach(size_t, box_idx, neighbor_cell) {
+                Cell * sur_cell = &grid[*box_idx];
+                da_foreach(size_t, p2, sur_cell) {
+                    size_t id2 = *p2;
+                    if (id1 <= id2) continue;
+                    particle_collide(particle1, particles.items+id2);          
+                }
+            }
+            box_collide(particle1, wall);
+            particle1->pos = vec_add(
+                particle1->pos,
+                vec_scale(dt, particle1->vel)
+            );
         }
-        box_collide(p, wall);
-        p->pos = vec_add(
-            p->pos,
-            vec_scale(dt, p->vel)
-        );
+    }
+    grid_reset();
+    da_foreach(Particle, p, &particles) {
+        grid_update(p-particles.items, &p->pos);
     }
 }
 
@@ -319,10 +376,18 @@ int main(void) {
     InitWindow(WINDOW_WIDTH, WINDOW_HEIGHT, "Ideal GAS in Raylib");
     // spawn entities
     spawn_random_particles(PARTICLE_NUM);
-    particle_collide_v2(&particles.items[10]);
     SetTargetFPS(60);
     // SetMouseCursor(MOUSE_CURSOR_CROSSHAIR); // test for fun
-    
+    // test for print grid
+    // for (size_t i = 0; i < CELL_NUM; ++i) {
+    //     Cell * cell = &neighbor_cells[i];
+    //     printf("(");
+    //     da_foreach(size_t, ptr, cell) {
+    //         printf("%zu, ", *ptr);
+    //     }
+    //     printf(")\n");
+    // }
+    // printf("%d\n", CELL_NUM);
     while(!WindowShouldClose()) {
         BeginDrawing();
         // TODO: maybe add to event() ?
@@ -335,5 +400,6 @@ int main(void) {
     CloseWindow();
     
     da_free(particles);
+    da_free(render_order);
     return 0;
 }
