@@ -12,6 +12,7 @@
 #define PARTICLE_NUM        100
 #define PARTICLE_RADIUS     20
 #define MAX_VELOCITY        400
+#define GRID_SIZE           32
 
 // Layout
 #define PANEL_WIDTH         250
@@ -114,6 +115,16 @@ struct {
     size_t capacity;
 } render_order = {0};
 
+// tracking particle in grid
+// divide space into 32 * 32 * 32 grid
+typedef struct {
+    size_t *items;
+    size_t count;
+    size_t capacity;
+} SubSpace;
+SubSpace grid[GRID_SIZE * GRID_SIZE * GRID_SIZE] = {0};
+void update_grid() {}
+
 void spawn_random_particles(size_t particle_numbers) {
     for (size_t i = 0; i < particle_numbers; ++i) {
         Particle p = {0};
@@ -164,6 +175,12 @@ void particle_collide(Particle *a, Particle *b) {
             b->vel  = vec_add(vb_perp, va_para);
         }
     }
+}
+
+void particle_collide_v2(Particle *a) {
+    size_t index = a - particles.items;
+    
+    TraceLog(LOG_INFO, "particle %zu", index);
 }
 
 void box_collide(Particle *p, Box *box) {
@@ -302,7 +319,7 @@ int main(void) {
     InitWindow(WINDOW_WIDTH, WINDOW_HEIGHT, "Ideal GAS in Raylib");
     // spawn entities
     spawn_random_particles(PARTICLE_NUM);
-    
+    particle_collide_v2(&particles.items[10]);
     SetTargetFPS(60);
     // SetMouseCursor(MOUSE_CURSOR_CROSSHAIR); // test for fun
     
