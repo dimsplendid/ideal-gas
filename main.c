@@ -8,7 +8,7 @@
 
 // Constant
 // like resource in Bevy
-#define PARTICLE_NUM        500
+#define PARTICLE_NUM        200
 #define PARTICLE_RADIUS     30
 #define MAX_VELOCITY        400
 
@@ -25,9 +25,9 @@
 #define BACKGROUND          GetColor(0x181818FF)
 
 // render far particle
-#define GAMMA               1.8
+#define GAMMA               1.8f
 #define RENDER_DEPTH_FACTOR 1/WALL_DEPTH
-#define DIM_RATIO           0.7
+#define DIM_RATIO           0.7f
 
 
 // States: TODO
@@ -175,9 +175,9 @@ void spawn_random_particles(size_t particle_numbers) {
     for (size_t i = 0; i < particle_numbers; ++i) {
         Particle p = {0};
         p.pos = (Vector3){
-            .x = GetRandomValue((PARTICLE_RADIUS+wall->min.x)*0.01,(wall->max.x-PARTICLE_RADIUS)*0.01),
-            .y = GetRandomValue((PARTICLE_RADIUS+wall->min.y)*0.01,(wall->max.y-PARTICLE_RADIUS)*0.01),
-            .z = GetRandomValue((PARTICLE_RADIUS+wall->min.z)*0.01,(wall->max.z-PARTICLE_RADIUS)*0.01),
+            .x = GetRandomValue((PARTICLE_RADIUS+wall->min.x)*0.01f,(wall->max.x-PARTICLE_RADIUS)*0.01f),
+            .y = GetRandomValue((PARTICLE_RADIUS+wall->min.y)*0.01f,(wall->max.y-PARTICLE_RADIUS)*0.01f),
+            .z = GetRandomValue((PARTICLE_RADIUS+wall->min.z)*0.01f,(wall->max.z-PARTICLE_RADIUS)*0.01f),
         };
         p.vel = (Vector3) {
             .x = GetRandomValue(-MAX_VELOCITY, MAX_VELOCITY),
@@ -220,7 +220,7 @@ void particle_collide(Particle *a, Particle *b) {
             // overlap modified
             float dist = sqrtf(dist_sq);
             float overlap = 2 * PARTICLE_RADIUS - dist;
-            Vector3 separation = vec_scale(overlap * 0.5 / dist, delta);
+            Vector3 separation = vec_scale(overlap * 0.5f / dist, delta);
             a->pos = vec_sub(a->pos, separation);
             b->pos = vec_add(b->pos, separation);
         }
@@ -291,9 +291,9 @@ void draw_arrow(Arrow a) {
 // make far particle dimmer
 Color depth_color(Color origin, float z) {
     return (Color) {
-        .r = (unsigned char)((float)(origin.r - 0x18) * powf((1.0 - z/WALL_DEPTH*DIM_RATIO), GAMMA)) + 0x18,
-        .g = (unsigned char)((float)(origin.g - 0x18) * powf((1.0 - z/WALL_DEPTH*DIM_RATIO), GAMMA)) + 0x18,
-        .b = (unsigned char)((float)(origin.b - 0x18) * powf((1.0 - z/WALL_DEPTH*DIM_RATIO), GAMMA)) + 0x18,
+        .r = (unsigned char)((float)(origin.r - 0x18) * powf((1.0f - z/WALL_DEPTH*DIM_RATIO), GAMMA)) + 0x18,
+        .g = (unsigned char)((float)(origin.g - 0x18) * powf((1.0f - z/WALL_DEPTH*DIM_RATIO), GAMMA)) + 0x18,
+        .b = (unsigned char)((float)(origin.b - 0x18) * powf((1.0f - z/WALL_DEPTH*DIM_RATIO), GAMMA)) + 0x18,
         .a = origin.a,
     };
 }
