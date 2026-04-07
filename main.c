@@ -12,7 +12,6 @@
 //     Type * item = element; // TODO: maybe add type to meta-data and it can auto convert
 //     do_something(item);
 // }
-
 #define foreach(ptr, da)                                    \
     for (size_t i = 0; i < da.count; ++ i)                  \
     for (void * ptr = da.items[i]; ptr != NULL; ptr = NULL)
@@ -24,24 +23,26 @@
 // Constant
 // like resource in Bevy
 
-#define PARTICLE_NUM 50
-#define PARTICLE_RADIUS 30
-#define PANEL_WIDTH 250
-#define WALL_WIDTH  800
-#define WALL_HEIGHT 600
-#define WALL_DEPTH  800
-#define WINDOW_WIDTH PANEL_WIDTH+WALL_WIDTH
-#define WINDOW_HEIGHT WALL_HEIGHT
-#define MAX_VELOCITY 400
-#define MAX_SIZE 40
-#define MIN_SIZE 20
+#define PARTICLE_NUM        50
+#define PARTICLE_RADIUS     30
+#define MAX_VELOCITY        400
+
+// Layout
+#define PANEL_WIDTH         250
+#define WALL_WIDTH          800
+#define WALL_HEIGHT         600
+#define WALL_DEPTH          800
+#define WINDOW_WIDTH        PANEL_WIDTH+WALL_WIDTH
+#define WINDOW_HEIGHT       WALL_HEIGHT
+#define BACKGROUND          GetColor(0x181818FF)
 
 // render far particle
-#define GAMMA 2.2
+#define GAMMA               1.8
 #define RENDER_DEPTH_FACTOR 1/WALL_DEPTH
-#define DIM_RATIO 0.7
+#define DIM_RATIO           0.7
 
-#define BACKGROUND GetColor(0x181818FF)
+
+// States: TODO
 
 // helper funciton
 // vector arithmetic
@@ -117,12 +118,6 @@ typedef struct {
 
 void spawn_random_particles(size_t particle_numbers) {
     for (size_t i = 0; i < particle_numbers; ++i) {
-        
-        // Vector3 new_pos = {
-        //     .x = GetRandomValue(PARTICLE_RADIUS+wall->min.x,wall->max.x-PARTICLE_RADIUS),
-        //     .y = GetRandomValue(PARTICLE_RADIUS+wall->min.y,wall->max.y-PARTICLE_RADIUS),
-        //     .z = GetRandomValue(PARTICLE_RADIUS+wall->min.z,wall->max.z-PARTICLE_RADIUS),
-        // };
         Particle *p = malloc(sizeof(*p));
         p->pos = (Vector3){
             .x = GetRandomValue((PARTICLE_RADIUS+wall->min.x)*0.01,(wall->max.x-PARTICLE_RADIUS)*0.01),
@@ -138,7 +133,6 @@ void spawn_random_particles(size_t particle_numbers) {
             .y = GetRandomValue(-MAX_VELOCITY, MAX_VELOCITY),
             .z = GetRandomValue(-MAX_VELOCITY, MAX_VELOCITY),
         };
-           
         da_append(&entities, p);
     }
 }
@@ -204,10 +198,19 @@ void analysis() {
     };
 }
 
+// Math Plot Lib
+typedef struct {
+    Color color;
+    float thick;
+} Style;
+void arrow(Vector2 start, Vector2 end, Style s) {
+    TODO("");
+}
 
 // Render
 
-
+// 3D-like effect
+// make far particle dimmer
 Color depth_color(Color origin, float z) {
     return (Color) {
         .r = (unsigned char)((float)(origin.r - 0x18) * powf((1.0 - z/WALL_DEPTH*DIM_RATIO), GAMMA)) + 0x18,
@@ -216,7 +219,9 @@ Color depth_color(Color origin, float z) {
         .a = origin.a,
     };
 }
-
+// raylib render the later object at upper "layer", which make
+// sense, just cover on it :)
+// sorted by depth to mimic the depth cover effect
 int particle_depth_compare(const void *a, const void *b) {
     const Particle *p1 = *(const Particle **)a;
     const Particle *p2 = *(const Particle **)b;
@@ -230,6 +235,7 @@ void render_sort() {
 bool pause = false;
 
 void update() {
+    if (pause) return; // <- control by events
     float dt = GetFrameTime();
     foreach_enumerate(i, e, entities) {
         if (dt > 0.1) continue; // block when render block
@@ -254,11 +260,11 @@ Vector2 screen(Particle *p) {
     };
 }
 
-char buf[256] = {0};
 void render() {
     // particle -> raylib: DrawCircle
     // box      -> raylib: DrawRectangle
     render_sort();
+    ClearBackground(BACKGROUND);
     foreach(entity, entities) {
         Particle *p = entity;
         DrawCircleV(
@@ -269,23 +275,22 @@ void render() {
     }
     // Panel
     DrawText("Ideal Gas Simulator", 20, 20, 20, WHITE);
-    snprintf(buf, sizeof(buf), "<V2> = %.2f", statistic.v_square_avg);
-    DrawText(buf, 20, 50, 20, WHITE);
-    snprintf(buf, sizeof(buf), "<V>  = %.2f", statistic.v_avg);
-    DrawText(buf, 20, 80, 20, WHITE);
+    DrawText(TextFormat("<V2> = %.2f", statistic.v_square_avg), 20, 50, 20, WHITE);
+    DrawText(TextFormat("<V>  = %.2f", statistic.v_avg       ), 20, 80, 20, WHITE);
 }
 
 int main(void) {
     InitWindow(WINDOW_WIDTH, WINDOW_HEIGHT, "Ideal GAS in Raylib");
     // spawn entities
     spawn_random_particles(PARTICLE_NUM);
-
+    
     SetTargetFPS(60);
+    // SetMouseCursor(MOUSE_CURSOR_CROSSHAIR); // test for fun
+    
     while(!WindowShouldClose()) {
         BeginDrawing();
-        // ClearBackground(RAYWHITE);
-        ClearBackground(BACKGROUND);
-        // if (IsKeyPressed(KEY_P)) pause = !pause;
+        // TODO: maybe add to event() ?
+        if (IsKeyPressed(KEY_P)) pause = !pause;
         update();
         analysis();
         render();
