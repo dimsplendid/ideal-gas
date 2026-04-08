@@ -10,7 +10,7 @@
 // like resource in Bevy
 #define PARTICLE_NUM        200
 #define PARTICLE_RADIUS     30
-#define MAX_VELOCITY        200
+#define MAX_VELOCITY        300
 
 #define GRID_SIZE           32
 #define CELL_NUM            GRID_SIZE*GRID_SIZE*GRID_SIZE
@@ -218,11 +218,11 @@ void particle_collide(Particle *a, Particle *b) {
             a->vel  = vec_add(a->vel, impulse);
             b->vel  = vec_sub(b->vel, impulse);
             // overlap modified
-            float dist = sqrtf(dist_sq);
-            float overlap = 2 * PARTICLE_RADIUS - dist;
-            Vector3 separation = vec_scale(overlap * 0.5f / dist, delta);
-            a->pos = vec_sub(a->pos, separation);
-            b->pos = vec_add(b->pos, separation);
+            // float dist = sqrtf(dist_sq);
+            // float overlap = 2 * PARTICLE_RADIUS - dist;
+            // Vector3 separation = vec_scale(overlap * 0.5f / dist, delta);
+            // a->pos = vec_sub(a->pos, separation);
+            // b->pos = vec_add(b->pos, separation);
         }
     }
 }
