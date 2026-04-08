@@ -1,8 +1,8 @@
 # Ideal Gas Simulator
 
-Simple simulator that using raylib to render.
-
-[raylib 5.5](https://github.com/raysan5/raylib/)
+Simple simulator that using raylib to render. [raylib 5.5](https://github.com/raysan5/raylib/)
+The canvas is 2D, but using projection to mimic 3D.
+The projection Using simple (x/z, y/z), following Tsoding tutorial: [One Formula That Demystifies 3D Graphics](https://www.youtube.com/watch?v=qjWkNZ0SXfo)
 
 ## Build
 
