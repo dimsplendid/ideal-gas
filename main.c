@@ -10,10 +10,10 @@
 // like resource in Bevy
 #define PARTICLE_NUM        200
 #define PARTICLE_RADIUS     30
-#define MAX_VELOCITY        300
+#define MAX_VELOCITY        200
 
-#define GRID_SIZE           32
-#define CELL_NUM            GRID_SIZE*GRID_SIZE*GRID_SIZE
+#define GRID_LEN            20
+#define CELL_NUM            GRID_LEN*GRID_LEN*GRID_LEN
 
 // Layout
 #define PANEL_WIDTH         250
@@ -26,11 +26,12 @@
 
 // render far particle
 #define GAMMA               1.8f
-#define RENDER_DEPTH_FACTOR 1/WALL_DEPTH
+#define RENDER_DEPTH_FACTOR 1.0f/WALL_DEPTH
 #define DIM_RATIO           0.7f
 
+// States
+bool pause = false; // Control is position update
 
-// States: TODO
 
 // helper funciton
 // vector arithmetic
@@ -77,6 +78,11 @@ typedef struct {
     // float lineThick;
 } Box;
 
+struct {
+    size_t *items;
+    size_t count;
+    size_t capacity;
+} entity = {0};// store id only
 
 // TODO: also add the box to entities and render
 Box *wall = &(Box) {
@@ -99,7 +105,6 @@ typedef struct {
     Color color;
 } Particle;
 
-// try more ecs method
 struct {
     // index indicate an entity
     // only particle for now, maybe using Union type sys later
@@ -108,6 +113,19 @@ struct {
     size_t count;
     size_t capacity;
 } particles = {0};
+
+// try more ecs method
+// separate components, all tracked by ids
+struct {
+    Vector3 *items;
+    size_t count;
+    size_t capacity;
+} velocity_component = {0};
+struct {
+    Vector3 *items;
+    size_t count;
+    size_t capacity;
+} position_component = {0};
 
 // tracking render order
 struct {
@@ -118,28 +136,31 @@ struct {
 
 // tracking particle in grid
 // divide space into 32 * 32 * 32 grid
+// TODO: maybe it's better to calculat base on particle size and box size?
 typedef struct {
     size_t *items; // particle ids
     size_t count;
     size_t capacity;
 } Cell;
-Cell grid[GRID_SIZE * GRID_SIZE * GRID_SIZE] = {0};
+Cell grid[CELL_NUM] = {0};
 // grid(i, j, k) = grid[i * size^2 + j * size + k] // map 3D to 1D
 // i, j, k <- (int) (W, H, D) / grid_size
-void grid_update(size_t id, Vector3 *pos) {
-    float cell_w = (float) WALL_WIDTH  / GRID_SIZE;
-    float cell_h = (float) WALL_HEIGHT / GRID_SIZE;
-    float cell_d = (float) WALL_DEPTH  / GRID_SIZE;
+void grid_put(size_t id, Vector3 *pos) {
+    float cell_w = (float) WALL_WIDTH  / GRID_LEN;
+    float cell_h = (float) WALL_HEIGHT / GRID_LEN;
+    float cell_d = (float) WALL_DEPTH  / GRID_LEN;
     int i = (pos->x - wall->min.x) / cell_w;
     int j = (pos->y - wall->min.y) / cell_h;
     int k = (pos->z - wall->min.z) / cell_d;
-    
-    if (i < 0) i = 0; else if (i >= GRID_SIZE) i = GRID_SIZE - 1;
-    if (j < 0) j = 0; else if (j >= GRID_SIZE) j = GRID_SIZE - 1;
-    if (k < 0) k = 0; else if (k >= GRID_SIZE) k = GRID_SIZE - 1;
 
-    int idx = i * GRID_SIZE * GRID_SIZE + j * GRID_SIZE + k;
-    if (idx >= 0 && idx < CELL_NUM) da_append(&grid[idx], id);
+    // out of bound modified
+    if (i < 0) i = 0; else if (i >= GRID_LEN) i = GRID_LEN - 1;
+    if (j < 0) j = 0; else if (j >= GRID_LEN) j = GRID_LEN - 1;
+    if (k < 0) k = 0; else if (k >= GRID_LEN) k = GRID_LEN - 1;
+
+    int idx = i * GRID_LEN * GRID_LEN + j * GRID_LEN + k;
+    // if (idx >= 0 && idx < CELL_NUM) da_append(&grid[idx], id);
+    da_append(&grid[idx], id);
 }
 void grid_reset() {
     for (size_t idx = 0; idx < CELL_NUM; ++idx) {
@@ -153,18 +174,18 @@ typedef struct {
     size_t count;
     size_t capacity;
 } CellId; // surrounding cell index of cell
-CellId neighbor_cells[GRID_SIZE * GRID_SIZE * GRID_SIZE] = {0};
+CellId neighbor_cells[GRID_LEN * GRID_LEN * GRID_LEN] = {0};
 
 void neighbor_cells_init() {
     for (size_t idx = 0; idx < CELL_NUM; ++idx) {
-        int i = idx / GRID_SIZE / GRID_SIZE;
-        int j = idx / GRID_SIZE % GRID_SIZE;
-        int k = idx % GRID_SIZE;
+        int i = idx / GRID_LEN / GRID_LEN;
+        int j = idx / GRID_LEN % GRID_LEN;
+        int k = idx % GRID_LEN;
         da_append(neighbor_cells+idx, idx);
-        for (int ni = i-1; ni <= i+1; ++ni) { if (ni == -1 || ni == GRID_SIZE) continue;
-        for (int nj = j-1; nj <= j+1; ++nj) { if (nj == -1 || nj == GRID_SIZE) continue;
-        for (int nk = k-1; nk <= k+1; ++nk) { if (nk == -1 || nk == GRID_SIZE) continue;
-            size_t nidx = ni * GRID_SIZE * GRID_SIZE + nj * GRID_SIZE + nk;
+        for (int ni = i-1; ni <= i+1; ++ni) { if (ni == -1 || ni == GRID_LEN) continue;
+        for (int nj = j-1; nj <= j+1; ++nj) { if (nj == -1 || nj == GRID_LEN) continue;
+        for (int nk = k-1; nk <= k+1; ++nk) { if (nk == -1 || nk == GRID_LEN) continue;
+            size_t nidx = ni * GRID_LEN * GRID_LEN + nj * GRID_LEN + nk;
             if (nidx == idx) continue;
             da_append(neighbor_cells+idx, nidx);
         }}}
@@ -192,7 +213,7 @@ void spawn_random_particles(size_t particle_numbers) {
         };
         da_append(&particles, p);
         da_append(&render_order, i);
-        grid_update(i, &p.pos);
+        grid_put(i, &p.pos);
     }
         
     neighbor_cells_init();
@@ -215,9 +236,10 @@ void particle_collide(Particle *a, Particle *b) {
             float scalar = v_dot_delta / dist_sq;
             Vector3 impulse = vec_scale(scalar, delta);
 
-            a->vel  = vec_add(a->vel, impulse);
-            b->vel  = vec_sub(b->vel, impulse);
+            a->vel = vec_add(a->vel, impulse);
+            b->vel = vec_sub(b->vel, impulse);
             // overlap modified
+            // > would cause weird juggling, cancel.
             // float dist = sqrtf(dist_sq);
             // float overlap = 2 * PARTICLE_RADIUS - dist;
             // Vector3 separation = vec_scale(overlap * 0.5f / dist, delta);
@@ -227,10 +249,23 @@ void particle_collide(Particle *a, Particle *b) {
     }
 }
 
+void particle_collide_sys() {
+    TODO("");
+}
+
 void box_collide(Particle *p, Box *box) {
     if ((p->pos.x-PARTICLE_RADIUS < box->min.x && p->vel.x < 0) || (p->pos.x+PARTICLE_RADIUS > box->max.x && p->vel.x > 0)) p->vel.x = -p->vel.x;
     if ((p->pos.y-PARTICLE_RADIUS < box->min.y && p->vel.y < 0) || (p->pos.y+PARTICLE_RADIUS > box->max.y && p->vel.y > 0)) p->vel.y = -p->vel.y;
     if ((p->pos.z-PARTICLE_RADIUS < box->min.z && p->vel.z < 0) || (p->pos.z+PARTICLE_RADIUS > box->max.z && p->vel.z > 0)) p->vel.z = -p->vel.z;
+}
+
+void box_collide_sys() {
+    TODO("");
+    // TODO("Add box merge?");
+}
+
+void movement_sys() {
+    TODO("");    
 }
 
 typedef struct {
@@ -238,6 +273,7 @@ typedef struct {
     float v_avg;
     float temperature;
     float kinetic_energy;
+    
 } Statistic;
 
 Statistic statistic = {0};
@@ -247,16 +283,14 @@ void analysis() {
     float v_sum = 0;
     da_foreach(Particle, p, &particles) {
         v_square_sum += vec_square_norm(p->vel);
-        v_sum += vec_norm(p->vel);
+        v_sum        += vec_norm(p->vel);
     }
     float v_square_avg = v_square_sum / PARTICLE_NUM;
     float v_avg        = v_sum        / PARTICLE_NUM;
-    statistic = (Statistic) {
-        .v_square_avg   = v_square_avg,
-        .v_avg          = v_avg,
-        .temperature    = v_square_avg,
-        .kinetic_energy = v_square_avg,
-    };
+    statistic.v_square_avg   = v_square_avg;
+    statistic.v_avg          = v_avg       ;
+    statistic.temperature    = v_square_avg;
+    statistic.kinetic_energy = v_square_avg;
 }
 
 // Math Plot Lib
@@ -307,18 +341,16 @@ int particle_depth_compare(const void *a, const void *b) {
     return p1.pos.z > p2.pos.z ? -1 : 1;
 }
 
-// may cause tracking problem if track particle by id;
 void render_sort() {
     qsort(render_order.items, render_order.count, sizeof(void*), particle_depth_compare);
 }
 
-bool pause = false;
 
 void update() {
     if (pause) return; // <- control by events
     float dt = GetFrameTime();
+    if (dt > 0.1) return; // block when render block
     for (size_t i = 0; i < CELL_NUM; ++i) {
-        if (dt > 0.1) continue; // block when render block
         Cell * cell = &grid[i];
         // TODO: neighbor_cells generate at the beginning
         CellId * neighbor_cell = &neighbor_cells[i];
@@ -335,11 +367,13 @@ void update() {
             }
         }
     }
+
+    // grid refill
     grid_reset();
     da_foreach(Particle, p, &particles) {
         box_collide(p, wall);
         p->pos = vec_add(p->pos,vec_scale(dt, p->vel));
-        grid_update(p-particles.items, &p->pos);
+        grid_put(p-particles.items, &p->pos);
     }
 }
 
