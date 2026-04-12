@@ -2,3 +2,4 @@
 *.old
 nob.c
 test.c
+.clangd
