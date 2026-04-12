@@ -8,14 +8,14 @@
 
 // Constant
 // like resource in Bevy
-#define PARTICLE_NUM        50
-#define PARTICLE_RADIUS     30
+#define PARTICLE_NUM        500
+#define PARTICLE_RADIUS     10
 #define MAX_VELOCITY        400
 
 #define GRID_LEN            20
 #define CELL_NUM            (GRID_LEN*GRID_LEN*GRID_LEN)
 #define BIN_COUNT           30
-#define TRAJECTORY_LEN      100
+#define TRAJECTORY_LEN      500
 // Layout
 #define PANEL_WIDTH         250
 #define WALL_WIDTH          800
@@ -111,11 +111,29 @@ Box *wall = &(Box) {
 
 // Component
 // separate components, all tracked by ids
+
+typedef enum {
+    COMPONENT_NONE       = 0,
+    COMPONENT_POSITION   = 1 << 0,
+    COMPONENT_VELOCITY   = 1 << 1,
+    COMPONENT_TRAJECTORY = 1 << 2,
+    COMPONENT_GRAVITY    = 1 << 3,
+    COMPONENT_COLLIDABLE = 1 << 4,
+    COMPONENT_VISIBLE    = 1 << 5,
+} ComponentTag;
+
+struct {
+    ComponentTag *items;
+    size_t count;
+    size_t capacity;
+} component_tag = {0};
+
 struct {
     float *items;
     size_t count;
     size_t capacity;
 } Vx = {0};
+
 struct {
     float *items;
     size_t count;
@@ -244,6 +262,15 @@ void spawn_random_particles(size_t particle_numbers) {
 
         // Trajectory
         da_append(&trajectory, ((Trajectory) {0}));
+        ComponentTag tag =
+           COMPONENT_POSITION     |
+           COMPONENT_VELOCITY     |
+           COMPONENT_GRAVITY      |
+           COMPONENT_COLLIDABLE   |
+           COMPONENT_NONE;
+
+        if (i == 0) tag |= COMPONENT_TRAJECTORY | COMPONENT_VISIBLE;
+        da_append(&component_tag, tag);
     }
     neighbor_cells_init();
 }
@@ -404,23 +431,26 @@ void render_sort() {
 }
 
 size_t count = 0;
+
+// using to skip specific gaurd
+#define component_gaurd(id, tag) if ((component_tag.items[id] & tag) ^ tag) continue
+#define HAS_COMP(id, tag) ((component_tag.items[id] & (tag)) == (tag))
+
 void trajectory_update() {
     count++;
     for (size_t i = 0; i < entity.count; ++i) {
+        // skip entity without component
+        // if ((component_tag.items[i] & COMPONENT_TRAJECTORY) ^ COMPONENT_TRAJECTORY) continue;
+        // component_gaurd(i, COMPONENT_TRAJECTORY);
+        if (!HAS_COMP(i, COMPONENT_TRAJECTORY)) continue;
         Vector3 pos = {Px.items[i], Py.items[i], Pz.items[i]};
         Trajectory *t = &trajectory.items[i];
+        // ring buffer -> trajectory start with (count % TRAJECTORY_LEN)
         if (count < TRAJECTORY_LEN) {
             da_append(t, pos);
         } else {
             t->items[count % TRAJECTORY_LEN] = pos;
         }
-        // // some free bugs using shift()
-        // if (t->count > TRAJECTORY_LEN) {
-        //     Vector3 *v = t->items;
-        //     t->items += 1;
-        //     t->count -= 1;
-        //     // free(v);
-        // };
     }
 }
 
@@ -518,6 +548,7 @@ void render() {
     ClearBackground(BACKGROUND);
     da_foreach(size_t, index, &render_order) {
         size_t i = *index;
+        if(!HAS_COMP(i, COMPONENT_VISIBLE)) continue;
         Vector3 pos = {Px.items[i], Py.items[i], Pz.items[i]};
         draw_circle_fake3d(pos, PARTICLE_RADIUS, color.items[i]);
     }
@@ -536,16 +567,6 @@ int main(void) {
     spawn_random_particles(PARTICLE_NUM);
     SetTargetFPS(60);
     // SetMouseCursor(MOUSE_CURSOR_CROSSHAIR); // test for fun
-    // test for print grid
-    // for (size_t i = 0; i < CELL_NUM; ++i) {
-    //     Cell * cell = &neighbor_cells[i];
-    //     printf("(");
-    //     da_foreach(size_t, ptr, cell) {
-    //         printf("%zu, ", *ptr);
-    //     }
-    //     printf(")\n");
-    // }
-    // printf("%d\n", CELL_NUM);
     size_t frame = 0;
     while(!WindowShouldClose()) {
         BeginDrawing();
@@ -557,12 +578,6 @@ int main(void) {
         EndDrawing();
     }
     CloseWindow();
-    // for (size_t i = 0; i < BIN_COUNT; ++i) {
-    //     printf("V[%zu]: %zu\n", i, vel_bin[i]);
-    // }
-    // for (size_t i = 0; i < BIN_COUNT; ++i) {
-    //     printf("V2[%zu]: %zu\n", i, vel2_bin[i]);
-    // }
     
     da_free(Px);
     da_free(Py);
