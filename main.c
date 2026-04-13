@@ -8,14 +8,14 @@
 
 // Constant
 // like resource in Bevy
-#define PARTICLE_NUM        500
-#define PARTICLE_RADIUS     30
-#define MAX_VELOCITY        400
+#define PARTICLE_NUM        10000
+#define PARTICLE_RADIUS     10
+#define MAX_VELOCITY        200
 
 #define GRID_LEN            20
 #define CELL_NUM            (GRID_LEN*GRID_LEN*GRID_LEN)
-#define BIN_COUNT           30
-#define TRAJECTORY_LEN      500
+#define BIN_COUNT           20
+#define TRAJECTORY_LEN      1000
 // Layout
 #define PANEL_WIDTH         250
 #define WALL_WIDTH          800
@@ -225,15 +225,19 @@ void neighbor_cells_init() {
     }
 }
 
+// TODO: maybe change to "fix" speed at all direction(or a range of angle?) is better
 void spawn_random_particles(size_t particle_numbers) {
     for (size_t i = 0; i < particle_numbers; ++i) {
         da_append(&Radius, PARTICLE_RADIUS);
-        da_append(&Px, (float)GetRandomValue((PARTICLE_RADIUS+wall->min.x)*0.1,(wall->max.x-PARTICLE_RADIUS)*0.1));
-        da_append(&Py, (float)GetRandomValue((PARTICLE_RADIUS+wall->min.y)*0.1,(wall->max.y-PARTICLE_RADIUS)*0.1));
-        da_append(&Pz, (float)GetRandomValue((PARTICLE_RADIUS+wall->min.z)*0.1,(wall->max.z-PARTICLE_RADIUS)*0.1) + 10.0f);
+        da_append(&Px, (float)GetRandomValue((PARTICLE_RADIUS+wall->min.x),(wall->max.x-PARTICLE_RADIUS)));
+        da_append(&Py, (float)GetRandomValue((PARTICLE_RADIUS+wall->min.y),(wall->max.y-PARTICLE_RADIUS)));
+        da_append(&Pz, (float)GetRandomValue((PARTICLE_RADIUS+wall->min.z),(wall->max.z-PARTICLE_RADIUS)));
+        // da_append(&Px, (float)GetRandomValue((PARTICLE_RADIUS+wall->min.x)*0.1,(wall->max.x-PARTICLE_RADIUS)*0.1));
+        // da_append(&Py, (float)GetRandomValue((PARTICLE_RADIUS+wall->min.y)*0.1,(wall->max.y-PARTICLE_RADIUS)*0.1));
+        // da_append(&Pz, (float)GetRandomValue((PARTICLE_RADIUS+wall->min.z)*0.1,(wall->max.z-PARTICLE_RADIUS)*0.1) + 10.0f);
         da_append(&Vx, 0);
         da_append(&Vy, 0);
-        da_append(&Vz, (float) -MAX_VELOCITY);
+        da_append(&Vz, GetRandomValue(0, 99) % 2 == 0 ? (float)-MAX_VELOCITY : (float)MAX_VELOCITY);
         da_append(&color,((Color){
             .r = GetRandomValue(50, 255),
             .g = GetRandomValue(50, 255),
@@ -251,11 +255,13 @@ void spawn_random_particles(size_t particle_numbers) {
            COMPONENT_VELOCITY     |
            COMPONENT_GRAVITY      |
            COMPONENT_COLLIDABLE   |
+           // COMPONENT_VISIBLE      |
            COMPONENT_NONE;
 
         if (i == 0) {
             tag |= COMPONENT_TRAJECTORY | COMPONENT_VISIBLE;
             // Radius.items[i] *= 10; // TODO: Modified collision
+            color.items[i] = GetColor(0x00FF26FF);
         }
         da_append(&component_tag, tag);
     }
@@ -498,6 +504,7 @@ void draw_circle_fake3d (Vector3 center, float radius, Color color) {
 
 void trajectory_render() {
     for (size_t i = 0; i < trajectory.count; ++i) {
+        if (!ENTITY_HAS(i, COMPONENT_TRAJECTORY)) continue;
         Trajectory t = trajectory.items[i];
         da_foreach(Vector3, p, &t) {
             draw_circle_fake3d(*p, 2, color.items[i]);
