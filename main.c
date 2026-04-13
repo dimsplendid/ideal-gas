@@ -9,7 +9,7 @@
 // Constant
 // like resource in Bevy
 #define PARTICLE_NUM        500
-#define PARTICLE_RADIUS     10
+#define PARTICLE_RADIUS     30
 #define MAX_VELOCITY        400
 
 #define GRID_LEN            20
@@ -45,10 +45,6 @@ Vector3 vec_add(Vector3 a, Vector3 b) {
 }
 
 // meta data
-// -> contain which component
-// -> query? tags?
-// -> tag array [1, 0, 1, 0, 0, 0, ...]
-// trajectory -> entity or compnent...?
 
 Vector3 vec_sub(Vector3 a, Vector3 b) {
     return (Vector3) {
@@ -122,43 +118,30 @@ typedef enum {
     COMPONENT_VISIBLE    = 1 << 5,
 } ComponentTag;
 
+// Check component
+#define ENTITY_HAS(id, tag) ((component_tag.items[id] & (tag)) == (tag))
+#define ENTITY_ANY(id, tag) (component_tag.items[id] & (tag))
+
 struct {
     ComponentTag *items;
     size_t count;
     size_t capacity;
 } component_tag = {0};
 
-struct {
+typedef struct {
     float *items;
     size_t count;
     size_t capacity;
-} Vx = {0};
+} RealArr;
 
-struct {
-    float *items;
-    size_t count;
-    size_t capacity;
-} Vy = {0};
-struct {
-    float *items;
-    size_t count;
-    size_t capacity;
-} Vz = {0};
-struct {
-    float *items;
-    size_t count;
-    size_t capacity;
-} Px = {0};
-struct {
-    float *items;
-    size_t count;
-    size_t capacity;
-} Py = {0};
-struct {
-    float *items;
-    size_t count;
-    size_t capacity;
-} Pz = {0};
+RealArr Radius = {0};
+RealArr Vx     = {0};
+RealArr Vy     = {0};
+RealArr Vz     = {0};
+RealArr Px     = {0};
+RealArr Py     = {0};
+RealArr Pz     = {0};
+
 struct {
     Color *items;
     size_t count;
@@ -244,6 +227,7 @@ void neighbor_cells_init() {
 
 void spawn_random_particles(size_t particle_numbers) {
     for (size_t i = 0; i < particle_numbers; ++i) {
+        da_append(&Radius, PARTICLE_RADIUS);
         da_append(&Px, (float)GetRandomValue((PARTICLE_RADIUS+wall->min.x)*0.1,(wall->max.x-PARTICLE_RADIUS)*0.1));
         da_append(&Py, (float)GetRandomValue((PARTICLE_RADIUS+wall->min.y)*0.1,(wall->max.y-PARTICLE_RADIUS)*0.1));
         da_append(&Pz, (float)GetRandomValue((PARTICLE_RADIUS+wall->min.z)*0.1,(wall->max.z-PARTICLE_RADIUS)*0.1) + 10.0f);
@@ -269,7 +253,10 @@ void spawn_random_particles(size_t particle_numbers) {
            COMPONENT_COLLIDABLE   |
            COMPONENT_NONE;
 
-        if (i == 0) tag |= COMPONENT_TRAJECTORY | COMPONENT_VISIBLE;
+        if (i == 0) {
+            tag |= COMPONENT_TRAJECTORY | COMPONENT_VISIBLE;
+            // Radius.items[i] *= 10; // TODO: Modified collision
+        }
         da_append(&component_tag, tag);
     }
     neighbor_cells_init();
@@ -432,9 +419,6 @@ void render_sort() {
 
 size_t count = 0;
 
-// using to skip specific gaurd
-#define component_gaurd(id, tag) if ((component_tag.items[id] & tag) ^ tag) continue
-#define HAS_COMP(id, tag) ((component_tag.items[id] & (tag)) == (tag))
 
 void trajectory_update() {
     count++;
@@ -442,7 +426,7 @@ void trajectory_update() {
         // skip entity without component
         // if ((component_tag.items[i] & COMPONENT_TRAJECTORY) ^ COMPONENT_TRAJECTORY) continue;
         // component_gaurd(i, COMPONENT_TRAJECTORY);
-        if (!HAS_COMP(i, COMPONENT_TRAJECTORY)) continue;
+        if (!ENTITY_HAS(i, COMPONENT_TRAJECTORY)) continue;
         Vector3 pos = {Px.items[i], Py.items[i], Pz.items[i]};
         Trajectory *t = &trajectory.items[i];
         // ring buffer -> trajectory start with (count % TRAJECTORY_LEN)
@@ -548,9 +532,9 @@ void render() {
     ClearBackground(BACKGROUND);
     da_foreach(size_t, index, &render_order) {
         size_t i = *index;
-        if(!HAS_COMP(i, COMPONENT_VISIBLE)) continue;
+        if(!ENTITY_HAS(i, COMPONENT_VISIBLE)) continue;
         Vector3 pos = {Px.items[i], Py.items[i], Pz.items[i]};
-        draw_circle_fake3d(pos, PARTICLE_RADIUS, color.items[i]);
+        draw_circle_fake3d(pos, Radius.items[i], color.items[i]);
     }
     // Panel
     DrawText("Ideal Gas Simulator", 20, 20, 20, WHITE);
