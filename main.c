@@ -8,9 +8,9 @@
 
 // Constant
 // like resource in Bevy
-#define PARTICLE_NUM        1000
+#define PARTICLE_NUM        200
 #define PARTICLE_RADIUS     30
-#define MAX_VELOCITY        200
+#define MAX_VELOCITY        400
 
 #define GRID_LEN            20
 #define CELL_NUM            (GRID_LEN*GRID_LEN*GRID_LEN)
@@ -36,7 +36,8 @@ bool pause = false; // Control is position update
 
 // helper funciton
 
-#define da_at(da, i) (da)->items[NOB_ASSERT((da)->count > i), (da)->items+i]
+// boundary checked access element in dynamic array
+#define da_at(da, i) (da)->items[(NOB_ASSERT((da)->count > i), i)]
 
 // vector arithmetic
 Vector3 vec_add(Vector3 a, Vector3 b) {
@@ -46,8 +47,6 @@ Vector3 vec_add(Vector3 a, Vector3 b) {
         .z = a.z + b.z,
     };
 }
-
-// meta data
 
 Vector3 vec_sub(Vector3 a, Vector3 b) {
     return (Vector3) {
@@ -110,7 +109,7 @@ Box *wall = &(Box) {
 
 // Component
 // separate components, all tracked by ids
-
+// using bitmask to track each entity components
 typedef enum {
     COMPONENT_NONE       = 0u,
     COMPONENT_POSITION   = 1u << 0,
@@ -144,6 +143,7 @@ RealArr Vz     = {0};
 RealArr Px     = {0};
 RealArr Py     = {0};
 RealArr Pz     = {0};
+RealArr M      = {0};
 
 struct {
     size_t *items;
@@ -200,10 +200,9 @@ void grid_put(size_t id) {
     if (j < 0) j = 0; else if (j >= GRID_LEN) j = GRID_LEN - 1;
     if (k < 0) k = 0; else if (k >= GRID_LEN) k = GRID_LEN - 1;
 
-    int idx = i * GRID_LEN * GRID_LEN + j * GRID_LEN + k;
-    // if (idx >= 0 && idx < CELL_NUM) da_append(&grid[idx], id);
-    da_append(&grid[idx], id);
-    grid_id.items[id] = idx;
+    int gid = i * GRID_LEN * GRID_LEN + j * GRID_LEN + k;
+    da_append(&grid[gid], id); // grid[gid] => particle id, reset every frame
+    da_at(&grid_id, id) = gid; // grid_id[id] => grid id, update when position update
 }
 void grid_reset() {
     for (size_t idx = 0; idx < CELL_NUM; ++idx) {
@@ -235,9 +234,10 @@ void neighbor_cells_init() {
     }
 }
 
+// particle entities initialize
 // TODO: maybe change to "fix" speed at all direction(or a range of angle?) is better
 void spawn_random_n_particles(size_t particle_numbers) {
-    for (size_t i = 0; i < particle_numbers; ++i) {
+    for (size_t id = 0; id < particle_numbers; ++id) {
         da_append(&Radius, PARTICLE_RADIUS);
         da_append(&Px, (float)GetRandomValue((PARTICLE_RADIUS+wall->min.x),(wall->max.x-PARTICLE_RADIUS)));
         da_append(&Py, (float)GetRandomValue((PARTICLE_RADIUS+wall->min.y),(wall->max.y-PARTICLE_RADIUS)));
@@ -254,9 +254,10 @@ void spawn_random_n_particles(size_t particle_numbers) {
             .b = GetRandomValue(50, 255),
             .a = 255,
         }));
-        da_append(&render_order, i);
-        da_append(&entity, i);
-        grid_put(i, & (Vector3) {Px.items[i], Py.items[i], Pz.items[i]});
+        da_append(&render_order, id);
+        da_append(&entity, id);
+        da_append(&grid_id, 0);
+        grid_put(id);
 
         // Trajectory
         da_append(&trajectory, ((Trajectory) {0}));
@@ -268,10 +269,10 @@ void spawn_random_n_particles(size_t particle_numbers) {
            // COMPONENT_VISIBLE      |
            COMPONENT_NONE;
 
-        if (i == 0) {
+        if (id == 0) {
             tag |= COMPONENT_TRAJECTORY | COMPONENT_VISIBLE;
-            // Radius.items[i] *= 10; // TODO: Modified collision
-            color.items[i] = GetColor(0x00FF26FF);
+            // Radius.items[id] *= 10; // TODO: Modified collision
+            color.items[id] = GetColor(0x00FF26FF);
         }
         da_append(&component_tag, tag);
     }
@@ -279,63 +280,11 @@ void spawn_random_n_particles(size_t particle_numbers) {
 }
 
 
-// System
-
-// perfect elasstic impact(after all, it's ideal gas...)
-void particle_collide(size_t a, size_t b) {
-    Vector3 Pa = {Px.items[a], Py.items[a], Pz.items[a]};
-    Vector3 Pb = {Px.items[b], Py.items[b], Pz.items[b]};
-    Vector3 delta       = vec_sub(Pb, Pa);
-    float   dist_sq     = vec_square_norm(delta);
-    float   min_dist_sq = 4 * PARTICLE_RADIUS * PARTICLE_RADIUS;
-
-    // only calculate velocity change when touching
-    if (dist_sq > min_dist_sq) return;
-    Vector3 Va = {Vx.items[a], Vy.items[a], Vz.items[a]};
-    Vector3 Vb = {Vx.items[b], Vy.items[b], Vz.items[b]};
-    Vector3 v_rel = vec_sub(Vb, Va); // relative velocity
-    float v_dot_delta = vec_dot(v_rel, delta);
-    
-    // only calculate collide velocity when getting close
-    if (v_dot_delta > 0) return;
-    float scalar = v_dot_delta / dist_sq;
-    Vector3 impulse = vec_scale(scalar, delta);
-
-    Va = vec_add(Va, impulse);
-    Vb = vec_sub(Vb, impulse);
-    Vx.items[a] = Va.x;
-    Vy.items[a] = Va.y;
-    Vz.items[a] = Va.z;
-    Vx.items[b] = Vb.x;
-    Vy.items[b] = Vb.y;
-    Vz.items[b] = Vb.z;
-}
-
-void particle_collide_sys() {
-    TODO("");
-}
-
-void box_collide(size_t p, Box *box) {
-    if ((Px.items[p]-PARTICLE_RADIUS < box->min.x && Vx.items[p] < 0) || (Px.items[p]+PARTICLE_RADIUS > box->max.x && Vx.items[p] > 0)) Vx.items[p] = -Vx.items[p];
-    if ((Py.items[p]-PARTICLE_RADIUS < box->min.y && Vy.items[p] < 0) || (Py.items[p]+PARTICLE_RADIUS > box->max.y && Vy.items[p] > 0)) Vy.items[p] = -Vy.items[p];
-    if ((Pz.items[p]-PARTICLE_RADIUS < box->min.z && Vz.items[p] < 0) || (Pz.items[p]+PARTICLE_RADIUS > box->max.z && Vz.items[p] > 0)) Vz.items[p] = -Vz.items[p];
-}
-
-void box_collide_sys() {
-    TODO("");
-    // TODO("Add box merge?");
-}
-
-void movement_sys() {
-    TODO("");    
-}
-
 typedef struct {
     float v_square_avg;
     float v_avg;
     float temperature;
     float kinetic_energy;
-    
 } Statistic;
 
 Statistic statistic = {0};
@@ -347,12 +296,15 @@ float vel2_bin[BIN_COUNT] = {0};
 void analysis() {
     float v_square_sum = 0;
     float v_sum = 0;
+
     for (size_t i = 0; i < BIN_COUNT; ++i) {
         vel_bin[i] = 0;
         vel2_bin[i] = 0;
     }
+
     float v_max = 0;
     float v2_max = 0;
+    
     for (size_t i = 0; i < entity.count; ++i) {
         Vector3 vi    = {Vx.items[i], Vy.items[i], Vz.items[i]};
         float v2n     = vec_square_norm(vi);
@@ -433,68 +385,6 @@ void render_sort() {
     qsort(render_order.items, render_order.count, sizeof(void*), particle_depth_compare);
 }
 
-size_t count = 0;
-
-
-void trajectory_update() {
-    count++;
-    for (size_t i = 0; i < entity.count; ++i) {
-        // skip entity without component
-        // if ((component_tag.items[i] & COMPONENT_TRAJECTORY) ^ COMPONENT_TRAJECTORY) continue;
-        // component_gaurd(i, COMPONENT_TRAJECTORY);
-        if (!ENTITY_HAS(i, COMPONENT_TRAJECTORY)) continue;
-        Vector3 pos = {Px.items[i], Py.items[i], Pz.items[i]};
-        Trajectory *t = &trajectory.items[i];
-        // ring buffer -> trajectory start with (count % TRAJECTORY_LEN)
-        if (count < TRAJECTORY_LEN) {
-            da_append(t, pos);
-        } else {
-            t->items[count % TRAJECTORY_LEN] = pos;
-        }
-    }
-}
-
-void velocity_update() {
-    // perfect elasstic impact
-    for (size_t i = 0; i < CELL_NUM; ++i) {
-        Cell * cell = &grid[i];
-        CellId * neighbor_cell = &neighbor_cells[i];
-        da_foreach(size_t, p1, cell) {
-            size_t id1 = *p1;
-            da_foreach(size_t, box_idx, neighbor_cell) {
-                Cell * sur_cell = &grid[*box_idx];
-                da_foreach(size_t, p2, sur_cell) {
-                    size_t id2 = *p2;
-                    if (id1 <= id2) continue;
-                    particle_collide(id1, id2);          
-                }
-            }
-            box_collide(id1, wall);
-        }
-    }
-}
-
-void position_update(float dt) {
-    grid_reset();
-    for (size_t i = 0; i < entity.count; ++i) {
-        Px.items[i] = Px.items[i] + Vx.items[i] * dt;
-        Py.items[i] = Py.items[i] + Vy.items[i] * dt;
-        Pz.items[i] = Pz.items[i] + Vz.items[i] * dt;
-        // position grid refill
-        grid_put(i, & (Vector3) {Px.items[i], Py.items[i], Pz.items[i]});
-    }
-}
-
-void update() {
-    if (pause) return; // <- control by events
-    float dt = GetFrameTime();
-    if (dt > 0.1) return; // block when render block
-
-    velocity_update();
-    position_update(dt);
-    trajectory_update();
-}
-
 // particle project to screen
 Vector2 screen(Vector3 pos) {
     return (Vector2) {
@@ -540,9 +430,6 @@ void render() {
     // Panel
 }
 
-void event() {
-    if (IsKeyPressed(KEY_P)) pause = !pause;
-}
 
 void particle_render(size_t id) {
     // regist allowed component tags
@@ -563,6 +450,61 @@ void trajectory_render(size_t id) {
     }
 }
 
+// System
+
+void event() {
+    if (IsKeyPressed(KEY_P)) pause = !pause;
+}
+
+// perfect elasstic impact(after all, it's ideal gas...)
+void particle_collide(size_t a, size_t b) {
+    Vector3 Pa = {Px.items[a], Py.items[a], Pz.items[a]};
+    Vector3 Pb = {Px.items[b], Py.items[b], Pz.items[b]};
+    Vector3 delta       = vec_sub(Pb, Pa);
+    float   dist_sq     = vec_square_norm(delta);
+    float   min_dist_sq = 4 * PARTICLE_RADIUS * PARTICLE_RADIUS;
+
+    // only calculate velocity change when touching
+    if (dist_sq > min_dist_sq) return;
+    Vector3 Va = {Vx.items[a], Vy.items[a], Vz.items[a]};
+    Vector3 Vb = {Vx.items[b], Vy.items[b], Vz.items[b]};
+    Vector3 v_rel = vec_sub(Vb, Va); // relative velocity
+    float v_dot_delta = vec_dot(v_rel, delta);
+    
+    // only calculate collide velocity when getting close
+    if (v_dot_delta > 0) return;
+    float scalar = v_dot_delta / dist_sq;
+    Vector3 impulse = vec_scale(scalar, delta);
+
+    Va = vec_add(Va, impulse);
+    Vb = vec_sub(Vb, impulse);
+    Vx.items[a] = Va.x;
+    Vy.items[a] = Va.y;
+    Vz.items[a] = Va.z;
+    Vx.items[b] = Vb.x;
+    Vy.items[b] = Vb.y;
+    Vz.items[b] = Vb.z;
+}
+
+void particle_collide_sys() {
+    TODO("");
+}
+
+void box_collide(size_t p, Box *box) {
+    if ((Px.items[p]-PARTICLE_RADIUS < box->min.x && Vx.items[p] < 0) || (Px.items[p]+PARTICLE_RADIUS > box->max.x && Vx.items[p] > 0)) Vx.items[p] = -Vx.items[p];
+    if ((Py.items[p]-PARTICLE_RADIUS < box->min.y && Vy.items[p] < 0) || (Py.items[p]+PARTICLE_RADIUS > box->max.y && Vy.items[p] > 0)) Vy.items[p] = -Vy.items[p];
+    if ((Pz.items[p]-PARTICLE_RADIUS < box->min.z && Vz.items[p] < 0) || (Pz.items[p]+PARTICLE_RADIUS > box->max.z && Vz.items[p] > 0)) Vz.items[p] = -Vz.items[p];
+}
+
+void box_collide_sys() {
+    TODO("");
+    // TODO("Add box merge?");
+}
+
+void movement_sys() {
+    TODO("");    
+}
+
 void position_update(size_t id, float dt) {
     ComponentTag allow_tags =
         COMPONENT_POSITION   |
@@ -576,57 +518,78 @@ void position_update(size_t id, float dt) {
     Py.items[id] = Py.items[id] + Vy.items[id] * dt;
     Pz.items[id] = Pz.items[id] + Vz.items[id] * dt;
 }
-void velocity_update(size_t id1) {
-    // perfect elasstic impact
-    for (size_t i = 0; i < CELL_NUM; ++i) {
-        Cell * cell = &grid[i];
-        CellId * neighbor_cell = &neighbor_cells[i];
-        da_foreach(size_t, p1, cell) {
-            size_t id1 = *p1;
-            da_foreach(size_t, box_idx, neighbor_cell) {
-                Cell * sur_cell = &grid[*box_idx];
-                da_foreach(size_t, p2, sur_cell) {
-                    size_t id2 = *p2;
-                    if (id1 <= id2) continue;
-                    particle_collide(id1, id2);          
-                }
-            }
-            box_collide(id1, wall);
+void velocity_update(size_t id1, float dt) {
+    // maybe add acceration like gravity?
+    UNUSED(dt);
+    
+    // wall collision
+    box_collide(id1, wall);
+
+    // particle-particle collision
+    size_t self_cell_id = da_at(&grid_id,id1);
+    CellId neighbor_cell = neighbor_cells[self_cell_id];
+    for(size_t i = 0; i < neighbor_cell.count; ++i) {
+        size_t other_cell_id = da_at(&neighbor_cell, i);
+        Cell other_cell = grid[other_cell_id];
+        for(size_t j = 0; j < other_cell.count; ++j) {
+            size_t id2 = da_at(&other_cell, j);
+            if (id1 <= id2) continue;
+            particle_collide(id1, id2);
         }
-    }
+        
+    }   
 }
 
+size_t trajectory_count = 0;
+void trajectory_update(size_t id, float dt) {
+    UNUSED(dt); // maybe setting longer duration?
+    ComponentTag allow_tags = COMPONENT_TRAJECTORY; 
+    if(!ENTITY_HAS(id, allow_tags)) return;
+    Vector3 pos = {Px.items[id], Py.items[id], Pz.items[id]};
+    Trajectory *t = &trajectory.items[id];
+    // ring buffer -> trajectory start with (trajectory_count % TRAJECTORY_LEN)
+    if (trajectory_count < TRAJECTORY_LEN) {
+        da_append(t, pos);
+    } else {
+        t->items[trajectory_count % TRAJECTORY_LEN] = pos;
+    }
+}
 // the entry point, all frame update
 void GameFrame() {
-    BeginDrawing();
-    ClearBackground(BACKGROUND);
-    event();
     float dt = GetFrameTime();
-    // go through all entity
-    for (size_t id = 0; id < entity.count; ++id) {
-        // render
-        particle_render(id);
-        trajectory_render(id);
-        
-        // update
-        position_update(id);
-        
-    }
-    render_sort(); // maybe change to insertion sort after update?
-    // put particle in each grid again;
-    // TODO; could I put this in the main entity loop, not separated?
-    grid_reset();
-    for (size_t id = 0; id < entity.count; ++id) {
-        grid_put(id);
-    }    
-    // Panel
-    // analysis(); // add some counter state later 
-    // DrawText("Ideal Gas Simulator", 20, 20, 20, WHITE);
-    // DrawText(TextFormat("<V2> = %.2f", statistic.v_square_avg), 20, 50, 20, WHITE);
-    // DrawText(TextFormat("<V>  = %.2f", statistic.v_avg       ), 20, 80, 20, WHITE);
-    // bin_render( vel_bin, (Vector2) {20, 150}, PANEL_WIDTH, 300);
-    // bin_render(vel2_bin, (Vector2) {20, 240}, PANEL_WIDTH, 300);
+    BeginDrawing();
+    event();
+    ClearBackground(BACKGROUND);
+    
+    // update through all entity
+    if (dt < 0.1 && !pause) { // also pause when frame block
+        for (size_t id = 0; id < entity.count; ++id) {
+            position_update  (id, dt);
+            trajectory_update(id, dt);
+            velocity_update  (id, dt);
+        }
+        trajectory_count++;
 
+        // put particle in each grid again;
+        grid_reset();
+        for (size_t id = 0; id < entity.count; ++id)  grid_put(id);
+        
+        render_sort(); // maybe change to insertion sort after update?
+    }
+    
+    // render through render order 
+    for (size_t i = 0; i < render_order.count; ++i) {
+        size_t id = da_at(&render_order, i);
+        particle_render  (id);
+        trajectory_render(id);
+    }
+    // Panel
+    analysis(); // add some counter state later 
+    DrawText("Ideal Gas Simulator", 20, 20, 20, WHITE);
+    DrawText(TextFormat("<V2> = %.2f", statistic.v_square_avg), 20, 50, 20, WHITE);
+    DrawText(TextFormat("<V>  = %.2f", statistic.v_avg       ), 20, 80, 20, WHITE);
+    bin_render( vel_bin, (Vector2) {20, 150}, PANEL_WIDTH, 300);
+    bin_render(vel2_bin, (Vector2) {20, 240}, PANEL_WIDTH, 300);
     EndDrawing();
 }
 
