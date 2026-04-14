@@ -8,8 +8,8 @@
 
 // Constant
 // like resource in Bevy
-#define PARTICLE_NUM        10000
-#define PARTICLE_RADIUS     10
+#define PARTICLE_NUM        1000
+#define PARTICLE_RADIUS     30
 #define MAX_VELOCITY        200
 
 #define GRID_LEN            20
@@ -35,6 +35,9 @@ bool pause = false; // Control is position update
 
 
 // helper funciton
+
+#define da_at(da, i) (da)->items[NOB_ASSERT((da)->count > i), (da)->items+i]
+
 // vector arithmetic
 Vector3 vec_add(Vector3 a, Vector3 b) {
     return (Vector3) {
@@ -109,13 +112,13 @@ Box *wall = &(Box) {
 // separate components, all tracked by ids
 
 typedef enum {
-    COMPONENT_NONE       = 0,
-    COMPONENT_POSITION   = 1 << 0,
-    COMPONENT_VELOCITY   = 1 << 1,
-    COMPONENT_TRAJECTORY = 1 << 2,
-    COMPONENT_GRAVITY    = 1 << 3,
-    COMPONENT_COLLIDABLE = 1 << 4,
-    COMPONENT_VISIBLE    = 1 << 5,
+    COMPONENT_NONE       = 0u,
+    COMPONENT_POSITION   = 1u << 0,
+    COMPONENT_VELOCITY   = 1u << 1,
+    COMPONENT_TRAJECTORY = 1u << 2,
+    COMPONENT_GRAVITY    = 1u << 3,
+    COMPONENT_COLLIDABLE = 1u << 4,
+    COMPONENT_VISIBLE    = 1u << 5,
 } ComponentTag;
 
 // Check component
@@ -141,6 +144,12 @@ RealArr Vz     = {0};
 RealArr Px     = {0};
 RealArr Py     = {0};
 RealArr Pz     = {0};
+
+struct {
+    size_t *items;
+    size_t count;
+    size_t capacity;
+} grid_id = {0}; // store each particle's located grid id
 
 struct {
     Color *items;
@@ -178,13 +187,13 @@ typedef struct {
 Cell grid[CELL_NUM] = {0};
 // grid(i, j, k) = grid[i * size^2 + j * size + k] // map 3D to 1D
 // i, j, k <- (int) (W, H, D) / grid_size
-void grid_put(size_t id, Vector3 *pos) {
+void grid_put(size_t id) {
     float cell_w = (float) WALL_WIDTH  / GRID_LEN;
     float cell_h = (float) WALL_HEIGHT / GRID_LEN;
     float cell_d = (float) WALL_DEPTH  / GRID_LEN;
-    int i = (pos->x - wall->min.x) / cell_w;
-    int j = (pos->y - wall->min.y) / cell_h;
-    int k = (pos->z - wall->min.z) / cell_d;
+    int i = (Px.items[id] - wall->min.x) / cell_w;
+    int j = (Py.items[id] - wall->min.y) / cell_h;
+    int k = (Pz.items[id] - wall->min.z) / cell_d;
 
     // out of bound modified
     if (i < 0) i = 0; else if (i >= GRID_LEN) i = GRID_LEN - 1;
@@ -194,6 +203,7 @@ void grid_put(size_t id, Vector3 *pos) {
     int idx = i * GRID_LEN * GRID_LEN + j * GRID_LEN + k;
     // if (idx >= 0 && idx < CELL_NUM) da_append(&grid[idx], id);
     da_append(&grid[idx], id);
+    grid_id.items[id] = idx;
 }
 void grid_reset() {
     for (size_t idx = 0; idx < CELL_NUM; ++idx) {
@@ -226,7 +236,7 @@ void neighbor_cells_init() {
 }
 
 // TODO: maybe change to "fix" speed at all direction(or a range of angle?) is better
-void spawn_random_particles(size_t particle_numbers) {
+void spawn_random_n_particles(size_t particle_numbers) {
     for (size_t i = 0; i < particle_numbers; ++i) {
         da_append(&Radius, PARTICLE_RADIUS);
         da_append(&Px, (float)GetRandomValue((PARTICLE_RADIUS+wall->min.x),(wall->max.x-PARTICLE_RADIUS)));
@@ -502,16 +512,6 @@ void draw_circle_fake3d (Vector3 center, float radius, Color color) {
     );
 }
 
-void trajectory_render() {
-    for (size_t i = 0; i < trajectory.count; ++i) {
-        if (!ENTITY_HAS(i, COMPONENT_TRAJECTORY)) continue;
-        Trajectory t = trajectory.items[i];
-        da_foreach(Vector3, p, &t) {
-            draw_circle_fake3d(*p, 2, color.items[i]);
-        }
-    }
-}
-
 void bin_render(
     float bin[],
     Vector2 position, // bottom-left
@@ -537,46 +537,115 @@ void render() {
     // box      -> raylib: DrawRectangle
     render_sort();
     ClearBackground(BACKGROUND);
-    da_foreach(size_t, index, &render_order) {
-        size_t i = *index;
-        if(!ENTITY_HAS(i, COMPONENT_VISIBLE)) continue;
-        Vector3 pos = {Px.items[i], Py.items[i], Pz.items[i]};
-        draw_circle_fake3d(pos, Radius.items[i], color.items[i]);
-    }
     // Panel
-    DrawText("Ideal Gas Simulator", 20, 20, 20, WHITE);
-    DrawText(TextFormat("<V2> = %.2f", statistic.v_square_avg), 20, 50, 20, WHITE);
-    DrawText(TextFormat("<V>  = %.2f", statistic.v_avg       ), 20, 80, 20, WHITE);
-    bin_render( vel_bin, (Vector2) {20, 150}, PANEL_WIDTH, 300);
-    bin_render(vel2_bin, (Vector2) {20, 240}, PANEL_WIDTH, 300);
-    trajectory_render();
 }
+
+void event() {
+    if (IsKeyPressed(KEY_P)) pause = !pause;
+}
+
+void particle_render(size_t id) {
+    // regist allowed component tags
+    ComponentTag allow_tags = COMPONENT_VISIBLE;
+    if(!ENTITY_HAS(id, allow_tags)) return;
+    
+    Vector3 pos = {Px.items[id], Py.items[id], Pz.items[id]};
+    draw_circle_fake3d(pos, Radius.items[id], color.items[id]);    
+}
+
+void trajectory_render(size_t id) {
+    ComponentTag allow_tags = COMPONENT_TRAJECTORY; 
+    if(!ENTITY_HAS(id, allow_tags)) return;
+    int trajectory_dot_size = 2;
+    Trajectory t = trajectory.items[id];
+    da_foreach(Vector3, p, &t) {
+        draw_circle_fake3d(*p, trajectory_dot_size, color.items[id]);
+    }
+}
+
+void position_update(size_t id, float dt) {
+    ComponentTag allow_tags =
+        COMPONENT_POSITION   |
+        COMPONENT_VELOCITY   |
+        COMPONENT_GRAVITY    |
+        COMPONENT_COLLIDABLE |
+        // COMPONENT_VISIBLE    |
+        COMPONENT_NONE;
+    if(!ENTITY_HAS(id, allow_tags)) return;
+    Px.items[id] = Px.items[id] + Vx.items[id] * dt;
+    Py.items[id] = Py.items[id] + Vy.items[id] * dt;
+    Pz.items[id] = Pz.items[id] + Vz.items[id] * dt;
+}
+void velocity_update(size_t id1) {
+    // perfect elasstic impact
+    for (size_t i = 0; i < CELL_NUM; ++i) {
+        Cell * cell = &grid[i];
+        CellId * neighbor_cell = &neighbor_cells[i];
+        da_foreach(size_t, p1, cell) {
+            size_t id1 = *p1;
+            da_foreach(size_t, box_idx, neighbor_cell) {
+                Cell * sur_cell = &grid[*box_idx];
+                da_foreach(size_t, p2, sur_cell) {
+                    size_t id2 = *p2;
+                    if (id1 <= id2) continue;
+                    particle_collide(id1, id2);          
+                }
+            }
+            box_collide(id1, wall);
+        }
+    }
+}
+
+// the entry point, all frame update
+void GameFrame() {
+    BeginDrawing();
+    ClearBackground(BACKGROUND);
+    event();
+    float dt = GetFrameTime();
+    // go through all entity
+    for (size_t id = 0; id < entity.count; ++id) {
+        // render
+        particle_render(id);
+        trajectory_render(id);
+        
+        // update
+        position_update(id);
+        
+    }
+    render_sort(); // maybe change to insertion sort after update?
+    // put particle in each grid again;
+    // TODO; could I put this in the main entity loop, not separated?
+    grid_reset();
+    for (size_t id = 0; id < entity.count; ++id) {
+        grid_put(id);
+    }    
+    // Panel
+    // analysis(); // add some counter state later 
+    // DrawText("Ideal Gas Simulator", 20, 20, 20, WHITE);
+    // DrawText(TextFormat("<V2> = %.2f", statistic.v_square_avg), 20, 50, 20, WHITE);
+    // DrawText(TextFormat("<V>  = %.2f", statistic.v_avg       ), 20, 80, 20, WHITE);
+    // bin_render( vel_bin, (Vector2) {20, 150}, PANEL_WIDTH, 300);
+    // bin_render(vel2_bin, (Vector2) {20, 240}, PANEL_WIDTH, 300);
+
+    EndDrawing();
+}
+
+// web cross platform using zozlib.js
+void raylib_js_set_entry(void (*entry)(void));
 
 int main(void) {
     InitWindow(WINDOW_WIDTH, WINDOW_HEIGHT, "Ideal GAS in Raylib");
     // spawn entities
-    spawn_random_particles(PARTICLE_NUM);
+    spawn_random_n_particles(PARTICLE_NUM);
     SetTargetFPS(60);
     // SetMouseCursor(MOUSE_CURSOR_CROSSHAIR); // test for fun
-    size_t frame = 0;
+#ifdef PLATFORM_WEB
+    raylib_js_set_entry(GameFrame);
+#else
     while(!WindowShouldClose()) {
-        BeginDrawing();
-        // TODO: maybe add to event() later?
-        if (IsKeyPressed(KEY_P)) pause = !pause;
-        update();
-        if (frame % 60 == 0) analysis();
-        render();
-        EndDrawing();
+        GameFrame();
     }
     CloseWindow();
-    
-    da_free(Px);
-    da_free(Py);
-    da_free(Pz);
-    da_free(Vx);
-    da_free(Vy);
-    da_free(Vz);
-    da_free(color);
-    da_free(render_order);
+#endif
     return 0;
 }
