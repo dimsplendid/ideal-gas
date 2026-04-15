@@ -28,3 +28,14 @@ gcc -o nob.exe nob.c
 
 ![ScreenShot](./screen_shot/screen_shot_20260406.png)
 
+## TODO
+
+1. [ ] chaotic system
+    1. gravitation
+    2. dual pendulum
+2. [ ] try hot loading
+    1. separate files
+    2. dynamic link
+    > maybe depend on OS?
+3. [ ] implement more ui
+4. [ ] Web application
