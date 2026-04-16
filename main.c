@@ -11,14 +11,15 @@
 #define G                   1
 
 // like resource in Bevy
-#define PARTICLE_NUM        2
-#define PARTICLE_RADIUS     40
-#define MAX_VELOCITY        400
+#define PARTICLE_NUM        3
+#define PARTICLE_RADIUS     20
+#define PARTICLE_MASS       1000000
+#define MAX_VELOCITY        40
 
 #define GRID_LEN            10
 #define CELL_NUM            (GRID_LEN*GRID_LEN*GRID_LEN)
 #define BIN_COUNT           20
-#define TRAJECTORY_LEN      1000
+#define TRAJECTORY_LEN      10000
 // Layout
 #define PANEL_WIDTH         250
 #define WALL_WIDTH          800
@@ -253,12 +254,12 @@ void spawn_random_n_particles(size_t particle_numbers) {
         // da_append(&Pz, (float)GetRandomValue((PARTICLE_RADIUS+wall->min.z)*0.1,(wall->max.z-PARTICLE_RADIUS)*0.1) + 10.0f);
         da_append(&Vx, 0);
         da_append(&Vy, 0);
-        da_append(&Vz, 0);
-//         da_append(&Vz, GetRandomValue(0, 99) % 2 == 0 ? (float)-MAX_VELOCITY : (float)MAX_VELOCITY);
+        // da_append(&Vz, 0);
+        da_append(&Vz, GetRandomValue(0, 99) % 2 == 0 ? (float)-MAX_VELOCITY : (float)MAX_VELOCITY);
         da_append(&Ax, 0);
         da_append(&Ay, 0);
         da_append(&Az, 0);
-        da_append(&M , 1);
+        da_append(&M , PARTICLE_MASS);
         da_append(&color,((Color){
             .r = GetRandomValue(50, 255),
             .g = GetRandomValue(50, 255),
