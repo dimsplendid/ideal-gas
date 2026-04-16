@@ -8,13 +8,13 @@
 
 // Constant
 
-#define G                   1
+#define G                   5
 
 // like resource in Bevy
 #define PARTICLE_NUM        3
-#define PARTICLE_RADIUS     20
-#define PARTICLE_MASS       1000000
-#define MAX_VELOCITY        40
+#define PARTICLE_RADIUS     10
+#define PARTICLE_MASS       100000
+#define MAX_VELOCITY        10
 
 #define GRID_LEN            10
 #define CELL_NUM            (GRID_LEN*GRID_LEN*GRID_LEN)
@@ -246,12 +246,12 @@ void neighbor_cells_init() {
 void spawn_random_n_particles(size_t particle_numbers) {
     for (size_t id = 0; id < particle_numbers; ++id) {
         da_append(&Radius, PARTICLE_RADIUS);
-        da_append(&Px, (float)GetRandomValue((PARTICLE_RADIUS+wall->min.x),(wall->max.x-PARTICLE_RADIUS)));
-        da_append(&Py, (float)GetRandomValue((PARTICLE_RADIUS+wall->min.y),(wall->max.y-PARTICLE_RADIUS)));
-        da_append(&Pz, (float)GetRandomValue((PARTICLE_RADIUS+wall->min.z),(wall->max.z-PARTICLE_RADIUS)));
-        // da_append(&Px, (float)GetRandomValue((PARTICLE_RADIUS+wall->min.x)*0.1,(wall->max.x-PARTICLE_RADIUS)*0.1));
-        // da_append(&Py, (float)GetRandomValue((PARTICLE_RADIUS+wall->min.y)*0.1,(wall->max.y-PARTICLE_RADIUS)*0.1));
-        // da_append(&Pz, (float)GetRandomValue((PARTICLE_RADIUS+wall->min.z)*0.1,(wall->max.z-PARTICLE_RADIUS)*0.1) + 10.0f);
+        // da_append(&Px, (float)GetRandomValue((PARTICLE_RADIUS+wall->min.x),(wall->max.x-PARTICLE_RADIUS)));
+        // da_append(&Py, (float)GetRandomValue((PARTICLE_RADIUS+wall->min.y),(wall->max.y-PARTICLE_RADIUS)));
+        // da_append(&Pz, (float)GetRandomValue((PARTICLE_RADIUS+wall->min.z),(wall->max.z-PARTICLE_RADIUS)));
+        da_append(&Px, (float)GetRandomValue((PARTICLE_RADIUS+wall->min.x)*0.5,(wall->max.x-PARTICLE_RADIUS)*0.5));
+        da_append(&Py, (float)GetRandomValue((PARTICLE_RADIUS+wall->min.y)*0.5,(wall->max.y-PARTICLE_RADIUS)*0.5));
+        da_append(&Pz, (float)GetRandomValue((PARTICLE_RADIUS+wall->min.z)*0.5,(wall->max.z-PARTICLE_RADIUS)*0.5) + 10.0f);
         da_append(&Vx, 0);
         da_append(&Vy, 0);
         // da_append(&Vz, 0);
@@ -277,7 +277,7 @@ void spawn_random_n_particles(size_t particle_numbers) {
            COMPONENT_POSITION     |
            COMPONENT_VELOCITY     |
            COMPONENT_GRAVITY      |
-           COMPONENT_COLLIDABLE   |
+           // COMPONENT_COLLIDABLE   |
            COMPONENT_VISIBLE      |
            COMPONENT_TRAJECTORY   |
            COMPONENT_NONE;
@@ -498,6 +498,12 @@ void perfect_elasstic_impact(size_t a, size_t b) {
     Vz.items[b] = Vb.z;
 }
 void particle_collide_sys(size_t id1, char* option) {
+    ComponentTag allow_tags =
+        COMPONENT_POSITION   |
+        COMPONENT_VELOCITY   |
+        COMPONENT_COLLIDABLE |
+        COMPONENT_NONE;
+    if(!ENTITY_HAS(id1, allow_tags)) return;
     UNUSED(option);
     size_t self_cell_id = da_at(&grid_id,id1);
     CellId neighbor_cell = neighbor_cells[self_cell_id];
@@ -530,8 +536,8 @@ void position_sys(size_t id, float dt) {
     ComponentTag allow_tags =
         COMPONENT_POSITION   |
         COMPONENT_VELOCITY   |
-        COMPONENT_GRAVITY    |
-        COMPONENT_COLLIDABLE |
+        // COMPONENT_GRAVITY    |
+        // COMPONENT_COLLIDABLE |
         // COMPONENT_VISIBLE    |
         COMPONENT_NONE;
     if(!ENTITY_HAS(id, allow_tags)) return;
@@ -551,19 +557,26 @@ void velocity_sys(size_t id, float dt) {
 }
 
 void gravity_sys(size_t id1) {
+    ComponentTag allow_tags =
+        COMPONENT_POSITION   |
+        COMPONENT_VELOCITY   |
+        COMPONENT_GRAVITY    |
+        COMPONENT_NONE;
+    if(!ENTITY_HAS(id1, allow_tags)) return;
+
     for (size_t id2 = 0; id2 < id1; ++id2) {
         float P_21_x = Px.items[id2] - Px.items[id1];
         float P_21_y = Py.items[id2] - Py.items[id1];
         float P_21_z = Pz.items[id2] - Pz.items[id1];
         float r = sqrtf(P_21_x*P_21_x + P_21_y*P_21_y+P_21_z*P_21_z);
         float r3 = r * r * r;
-        Ax.items[id1] =  P_21_x / r3 * M.items[id2];
-        Ay.items[id1] =  P_21_y / r3 * M.items[id2];
-        Az.items[id1] =  P_21_z / r3 * M.items[id2];
-        Ax.items[id2] = -P_21_x / r3 * M.items[id1];
-        Ay.items[id2] = -P_21_y / r3 * M.items[id1];
-        Az.items[id2] = -P_21_z / r3 * M.items[id1];
-        Az.items[id2] = -P_21_z / r3 * M.items[id1];
+        Ax.items[id1] =  G * P_21_x / r3 * M.items[id2];
+        Ay.items[id1] =  G * P_21_y / r3 * M.items[id2];
+        Az.items[id1] =  G * P_21_z / r3 * M.items[id2];
+        Ax.items[id2] = -G * P_21_x / r3 * M.items[id1];
+        Ay.items[id2] = -G * P_21_y / r3 * M.items[id1];
+        Az.items[id2] = -G * P_21_z / r3 * M.items[id1];
+        Az.items[id2] = -G * P_21_z / r3 * M.items[id1];
      }
  }
 
