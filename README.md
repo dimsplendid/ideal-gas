@@ -36,10 +36,12 @@ gcc -o nob.exe nob.c
     2. dual pendulum
 2. [ ] quantum system
     > wavepilot? only wave? density matrix?
-3. [ ] try hot loading
+    > maybe it's interesting to build some _field_ in space?
+3. [ ] relativity theory
+4. [ ] try hot loading
     1. separate files
     2. dynamic link
     > maybe depend on OS?
     > I also think this would be a cool ideal for a __programming game__
-4. [ ] implement more ui
-5. [ ] Web application
+5. [ ] implement more ui
+6. [ ] Web application
