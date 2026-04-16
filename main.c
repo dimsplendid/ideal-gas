@@ -8,18 +8,21 @@
 
 // Constant
 
-#define G                   5
+#define G                   100
 
 // like resource in Bevy
-#define PARTICLE_NUM        3
-#define PARTICLE_RADIUS     10
-#define PARTICLE_MASS       100000
-#define MAX_VELOCITY        10
+#define PARTICLE_NUM        100
+#define PARTICLE_RADIUS     30
+#define PARTICLE_MASS       100
+#define MAX_VELOCITY        50
+
+// initial random particle spread
+#define SPREAD_RATIO        0.2
 
 #define GRID_LEN            10
 #define CELL_NUM            (GRID_LEN*GRID_LEN*GRID_LEN)
 #define BIN_COUNT           20
-#define TRAJECTORY_LEN      10000
+#define TRAJECTORY_LEN      100
 // Layout
 #define PANEL_WIDTH         250
 #define WALL_WIDTH          800
@@ -98,7 +101,7 @@ typedef struct {
 } Box;
 
 // TODO: also add the box to entities and render
-Box *wall = &(Box) {
+Box wall = {
     .min = (Vector3) {
         .x=-(float)WALL_WIDTH /2,
         .y=-(float)WALL_HEIGHT/2,
@@ -198,9 +201,9 @@ void grid_put(size_t id) {
     float cell_w = (float) WALL_WIDTH  / GRID_LEN;
     float cell_h = (float) WALL_HEIGHT / GRID_LEN;
     float cell_d = (float) WALL_DEPTH  / GRID_LEN;
-    int i = (Px.items[id] - wall->min.x) / cell_w;
-    int j = (Py.items[id] - wall->min.y) / cell_h;
-    int k = (Pz.items[id] - wall->min.z) / cell_d;
+    int i = (Px.items[id] - wall.min.x) / cell_w;
+    int j = (Py.items[id] - wall.min.y) / cell_h;
+    int k = (Pz.items[id] - wall.min.z) / cell_d;
 
     // out of bound modified
     if (i < 0) i = 0; else if (i >= GRID_LEN) i = GRID_LEN - 1;
@@ -246,16 +249,18 @@ void neighbor_cells_init() {
 void spawn_random_n_particles(size_t particle_numbers) {
     for (size_t id = 0; id < particle_numbers; ++id) {
         da_append(&Radius, PARTICLE_RADIUS);
-        // da_append(&Px, (float)GetRandomValue((PARTICLE_RADIUS+wall->min.x),(wall->max.x-PARTICLE_RADIUS)));
-        // da_append(&Py, (float)GetRandomValue((PARTICLE_RADIUS+wall->min.y),(wall->max.y-PARTICLE_RADIUS)));
-        // da_append(&Pz, (float)GetRandomValue((PARTICLE_RADIUS+wall->min.z),(wall->max.z-PARTICLE_RADIUS)));
-        da_append(&Px, (float)GetRandomValue((PARTICLE_RADIUS+wall->min.x)*0.5,(wall->max.x-PARTICLE_RADIUS)*0.5));
-        da_append(&Py, (float)GetRandomValue((PARTICLE_RADIUS+wall->min.y)*0.5,(wall->max.y-PARTICLE_RADIUS)*0.5));
-        da_append(&Pz, (float)GetRandomValue((PARTICLE_RADIUS+wall->min.z)*0.5,(wall->max.z-PARTICLE_RADIUS)*0.5) + 10.0f);
-        da_append(&Vx, 0);
-        da_append(&Vy, 0);
+        // da_append(&Px, (float)GetRandomValue((PARTICLE_RADIUS+wall.min.x),(wall.max.x-PARTICLE_RADIUS)));
+        // da_append(&Py, (float)GetRandomValue((PARTICLE_RADIUS+wall.min.y),(wall.max.y-PARTICLE_RADIUS)));
+        // da_append(&Pz, (float)GetRandomValue((PARTICLE_RADIUS+wall.min.z),(wall.max.z-PARTICLE_RADIUS)));
+        da_append(&Px, (float)GetRandomValue((PARTICLE_RADIUS+wall.min.x)*SPREAD_RATIO,(wall.max.x-PARTICLE_RADIUS)*SPREAD_RATIO));
+        da_append(&Py, (float)GetRandomValue((PARTICLE_RADIUS+wall.min.y)*SPREAD_RATIO,(wall.max.y-PARTICLE_RADIUS)*SPREAD_RATIO));
+        da_append(&Pz, (float)GetRandomValue((PARTICLE_RADIUS+wall.min.z)*SPREAD_RATIO,(wall.max.z-PARTICLE_RADIUS)*SPREAD_RATIO) + 10.0f);
+        // da_append(&Vx, 0);
+        // da_append(&Vy, 0);
         // da_append(&Vz, 0);
-        da_append(&Vz, GetRandomValue(0, 99) % 2 == 0 ? (float)-MAX_VELOCITY : (float)MAX_VELOCITY);
+        da_append(&Vx, GetRandomValue(-MAX_VELOCITY, MAX_VELOCITY));
+        da_append(&Vy, GetRandomValue(-MAX_VELOCITY, MAX_VELOCITY));
+        da_append(&Vz, GetRandomValue(-MAX_VELOCITY, MAX_VELOCITY));
         da_append(&Ax, 0);
         da_append(&Ay, 0);
         da_append(&Az, 0);
@@ -277,16 +282,28 @@ void spawn_random_n_particles(size_t particle_numbers) {
            COMPONENT_POSITION     |
            COMPONENT_VELOCITY     |
            COMPONENT_GRAVITY      |
-           // COMPONENT_COLLIDABLE   |
+           COMPONENT_COLLIDABLE   |
            COMPONENT_VISIBLE      |
-           COMPONENT_TRAJECTORY   |
+           // COMPONENT_TRAJECTORY   |
            COMPONENT_NONE;
 
-        if (id == 0) {
-            tag |= COMPONENT_TRAJECTORY | COMPONENT_VISIBLE;
-            // Radius.items[id] *= 10; // TODO: Modified collision
-            color.items[id] = GetColor(0x00FF26FF);
-        }
+        // if (id == 0) {
+        //     tag |= COMPONENT_TRAJECTORY | COMPONENT_VISIBLE;
+        //     tag = tag & ~COMPONENT_VELOCITY; // TODO: change to something like view point track
+        //     M.items[id] *= 10;
+        //     Px.items[id] = 0;
+        //     Py.items[id] = 0;
+        //     Pz.items[id] = WALL_DEPTH/2;
+        //     Vx.items[id] = 0;
+        //     Vy.items[id] = 0;
+        //     Vz.items[id] = 0;
+        //     Radius.items[id] *= 3; // TODO: Modified collision
+        //     color.items[id] = GetColor(0x00FF26FF);
+        // }
+        // if (id == 1) {
+        //     tag |= COMPONENT_TRAJECTORY | COMPONENT_VISIBLE;
+        //     color.items[id] = GetColor(0xFF2600FF);
+        // }
         da_append(&component_tag, tag);
     }
     neighbor_cells_init();
@@ -435,20 +452,18 @@ void bin_render(
     }
 }
 
-void render() {
-    // particle -> raylib: DrawCircle
-    // box      -> raylib: DrawRectangle
-    render_sort();
-    ClearBackground(BACKGROUND);
-    // Panel
+bool is_in_screen(float x, float y, float z) {
+    if (x > wall.max.x || x < wall.min.x) return false;
+    if (y > wall.max.y || y < wall.min.y) return false;
+    if (z > wall.max.z || z < wall.min.z) return false;
+    return true;
 }
-
 
 void particle_render(size_t id) {
     // regist allowed component tags
     ComponentTag allow_tags = COMPONENT_VISIBLE;
     if(!ENTITY_HAS(id, allow_tags)) return;
-    
+    if (!is_in_screen(Px.items[id], Py.items[id], Pz.items[id])) return;
     Vector3 pos = {Px.items[id], Py.items[id], Pz.items[id]};
     draw_circle_fake3d(pos, Radius.items[id], color.items[id]);    
 }
@@ -456,9 +471,10 @@ void particle_render(size_t id) {
 void trajectory_render(size_t id) {
     ComponentTag allow_tags = COMPONENT_TRAJECTORY; 
     if(!ENTITY_HAS(id, allow_tags)) return;
-    int trajectory_dot_size = 2;
+    int trajectory_dot_size = 1;
     Trajectory t = trajectory.items[id];
     da_foreach(Vector3, p, &t) {
+        if (!is_in_screen(p->x, p->y, p->z)) continue;
         draw_circle_fake3d(*p, trajectory_dot_size, color.items[id]);
     }
 }
@@ -517,10 +533,17 @@ void particle_collide_sys(size_t id1, char* option) {
         }
     }   
 }
-void box_collide_sys(size_t p, Box *box) {
-    if ((Px.items[p]-PARTICLE_RADIUS < box->min.x && Vx.items[p] < 0) || (Px.items[p]+PARTICLE_RADIUS > box->max.x && Vx.items[p] > 0)) Vx.items[p] = -Vx.items[p];
-    if ((Py.items[p]-PARTICLE_RADIUS < box->min.y && Vy.items[p] < 0) || (Py.items[p]+PARTICLE_RADIUS > box->max.y && Vy.items[p] > 0)) Vy.items[p] = -Vy.items[p];
-    if ((Pz.items[p]-PARTICLE_RADIUS < box->min.z && Vz.items[p] < 0) || (Pz.items[p]+PARTICLE_RADIUS > box->max.z && Vz.items[p] > 0)) Vz.items[p] = -Vz.items[p];
+void box_collide_sys(size_t id, Box *box) {
+    ComponentTag allow_tags =
+        COMPONENT_POSITION   |
+        COMPONENT_VELOCITY   |
+        COMPONENT_COLLIDABLE |
+        COMPONENT_NONE;
+    if(!ENTITY_HAS(id, allow_tags)) return;
+
+    if ((Px.items[id]-PARTICLE_RADIUS < box->min.x && Vx.items[id] < 0) || (Px.items[id]+PARTICLE_RADIUS > box->max.x && Vx.items[id] > 0)) Vx.items[id] = -Vx.items[id];
+    if ((Py.items[id]-PARTICLE_RADIUS < box->min.y && Vy.items[id] < 0) || (Py.items[id]+PARTICLE_RADIUS > box->max.y && Vy.items[id] > 0)) Vy.items[id] = -Vy.items[id];
+    if ((Pz.items[id]-PARTICLE_RADIUS < box->min.z && Vz.items[id] < 0) || (Pz.items[id]+PARTICLE_RADIUS > box->max.z && Vz.items[id] > 0)) Vz.items[id] = -Vz.items[id];
 }
 
 void box_collide_sys_sys() {
@@ -547,7 +570,7 @@ void position_sys(size_t id, float dt) {
 }
 void velocity_sys(size_t id, float dt) {
 
-    box_collide_sys(id, wall);
+    box_collide_sys(id, &wall);
     particle_collide_sys(id, NULL);
     
     // maybe add acceration
@@ -563,40 +586,58 @@ void gravity_sys(size_t id1) {
         COMPONENT_GRAVITY    |
         COMPONENT_NONE;
     if(!ENTITY_HAS(id1, allow_tags)) return;
-
-    for (size_t id2 = 0; id2 < id1; ++id2) {
+    for (size_t id2 = 0; id2 < entity.count; ++id2) {
+        if (id1 == id2) continue;
         float P_21_x = Px.items[id2] - Px.items[id1];
         float P_21_y = Py.items[id2] - Py.items[id1];
         float P_21_z = Pz.items[id2] - Pz.items[id1];
         float r = sqrtf(P_21_x*P_21_x + P_21_y*P_21_y+P_21_z*P_21_z);
         float r3 = r * r * r;
-        Ax.items[id1] =  G * P_21_x / r3 * M.items[id2];
-        Ay.items[id1] =  G * P_21_y / r3 * M.items[id2];
-        Az.items[id1] =  G * P_21_z / r3 * M.items[id2];
-        Ax.items[id2] = -G * P_21_x / r3 * M.items[id1];
-        Ay.items[id2] = -G * P_21_y / r3 * M.items[id1];
-        Az.items[id2] = -G * P_21_z / r3 * M.items[id1];
-        Az.items[id2] = -G * P_21_z / r3 * M.items[id1];
+        Ax.items[id1] +=  G * P_21_x / r3 * M.items[id2];
+        Ay.items[id1] +=  G * P_21_y / r3 * M.items[id2];
+        Az.items[id1] +=  G * P_21_z / r3 * M.items[id2];
      }
  }
 
 void acceleration_sys(size_t id, float dt) {
     UNUSED(dt);
+    Ax.items[id] = 0; 
+    Ay.items[id] = 0; 
+    Az.items[id] = 0; 
     gravity_sys(id);
 }
 
 size_t trajectory_count = 0;
+size_t trajectory_len = TRAJECTORY_LEN;
+size_t trajectory_objects = PARTICLE_NUM;
 void trajectory_sys(size_t id, float dt) {
+    return;
+    // the logic is wrong, need think and rewrite
     UNUSED(dt); // maybe setting longer duration?
     ComponentTag allow_tags = COMPONENT_TRAJECTORY; 
-    if(!ENTITY_HAS(id, allow_tags)) return;
-    Vector3 pos = {Px.items[id], Py.items[id], Pz.items[id]};
-    Trajectory *t = &trajectory.items[id];
-    // ring buffer -> trajectory start with (trajectory_count % TRAJECTORY_LEN)
-    if (trajectory_count < TRAJECTORY_LEN) {
-        da_append(t, pos);
+    if (ENTITY_HAS(id, allow_tags)) {
+        Trajectory *t = &trajectory.items[id];
+        if (!is_in_screen(Px.items[id], Py.items[id], Pz.items[id])){
+            component_tag.items[id] &= ~COMPONENT_TRAJECTORY;
+            t->count = 0;
+            trajectory_objects--;
+            trajectory_len = (size_t)30000/trajectory_objects; // 30000 is just arbitrary pick for test
+            // printf("trajectory_len: %zu\n", trajectory_len);
+        }
+        Vector3 pos = {Px.items[id], Py.items[id], Pz.items[id]};
+        // ring buffer -> trajectory start with ((trajectory_count+1) % TRAJECTORY_LEN)
+        if (trajectory_count < trajectory_len) {
+            da_append(t, pos);
+        } else {
+            t->items[trajectory_count % TRAJECTORY_LEN] = pos;
+        }
     } else {
-        t->items[trajectory_count % TRAJECTORY_LEN] = pos;
+        if (is_in_screen(Px.items[id], Py.items[id], Pz.items[id])){
+            component_tag.items[id] |= COMPONENT_TRAJECTORY;
+            trajectory_objects++;
+            trajectory_len = (size_t)30000/trajectory_objects; // 30000 is just arbitrary pick for test
+            // printf("trajectory_len: %zu\n", trajectory_len);
+        }        
     }
 }
 // the entry point, all frame update
@@ -632,13 +673,13 @@ void GameFrame() {
     // Panel
     analysis(); // add some counter state later 
     DrawText("Ideal Gas Simulator", 20, 20, 20, WHITE);
-    // DrawText(TextFormat("<V2> = %.2f", statistic.v_square_avg), 20, 50, 20, WHITE);
-    // DrawText(TextFormat("<V>  = %.2f", statistic.v_avg       ), 20, 80, 20, WHITE);
+    DrawText(TextFormat("<V2> = %.2f", statistic.v_square_avg), 20, 50, 20, WHITE);
+    DrawText(TextFormat("<V>  = %.2f", statistic.v_avg       ), 20, 80, 20, WHITE);
     bin_render( vel_bin, (Vector2) {20, 150}, PANEL_WIDTH, 300);
     bin_render(vel2_bin, (Vector2) {20, 240}, PANEL_WIDTH, 300);
     
-    DrawText(TextFormat("<A0>  = %.2f", sqrtf(Ax.items[0]*Ax.items[0] + Ay.items[0]*Ay.items[0]+Az.items[0]*Az.items[0])), 20, 50, 20, WHITE);
-    DrawText(TextFormat("<A1>  = %.2f", sqrtf(Ax.items[1]*Ax.items[1] + Ay.items[1]*Ay.items[1]+Az.items[1]*Az.items[1])), 20, 80, 20, WHITE);
+    // DrawText(TextFormat("<A0>  = %.2f", sqrtf(Ax.items[0]*Ax.items[0] + Ay.items[0]*Ay.items[0]+Az.items[0]*Az.items[0])), 20, 50, 20, WHITE);
+    // DrawText(TextFormat("<A1>  = %.2f", sqrtf(Ax.items[1]*Ax.items[1] + Ay.items[1]*Ay.items[1]+Az.items[1]*Az.items[1])), 20, 80, 20, WHITE);
     EndDrawing();
 }
 
