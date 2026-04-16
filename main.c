@@ -7,12 +7,15 @@
 #include "nob.h"
 
 // Constant
+
+#define G                   1
+
 // like resource in Bevy
-#define PARTICLE_NUM        200
-#define PARTICLE_RADIUS     30
+#define PARTICLE_NUM        2
+#define PARTICLE_RADIUS     40
 #define MAX_VELOCITY        400
 
-#define GRID_LEN            20
+#define GRID_LEN            10
 #define CELL_NUM            (GRID_LEN*GRID_LEN*GRID_LEN)
 #define BIN_COUNT           20
 #define TRAJECTORY_LEN      1000
@@ -137,6 +140,9 @@ typedef struct {
 } RealArr;
 
 RealArr Radius = {0};
+RealArr Ax     = {0};
+RealArr Ay     = {0};
+RealArr Az     = {0};
 RealArr Vx     = {0};
 RealArr Vy     = {0};
 RealArr Vz     = {0};
@@ -247,7 +253,12 @@ void spawn_random_n_particles(size_t particle_numbers) {
         // da_append(&Pz, (float)GetRandomValue((PARTICLE_RADIUS+wall->min.z)*0.1,(wall->max.z-PARTICLE_RADIUS)*0.1) + 10.0f);
         da_append(&Vx, 0);
         da_append(&Vy, 0);
-        da_append(&Vz, GetRandomValue(0, 99) % 2 == 0 ? (float)-MAX_VELOCITY : (float)MAX_VELOCITY);
+        da_append(&Vz, 0);
+//         da_append(&Vz, GetRandomValue(0, 99) % 2 == 0 ? (float)-MAX_VELOCITY : (float)MAX_VELOCITY);
+        da_append(&Ax, 0);
+        da_append(&Ay, 0);
+        da_append(&Az, 0);
+        da_append(&M , 1);
         da_append(&color,((Color){
             .r = GetRandomValue(50, 255),
             .g = GetRandomValue(50, 255),
@@ -266,7 +277,8 @@ void spawn_random_n_particles(size_t particle_numbers) {
            COMPONENT_VELOCITY     |
            COMPONENT_GRAVITY      |
            COMPONENT_COLLIDABLE   |
-           // COMPONENT_VISIBLE      |
+           COMPONENT_VISIBLE      |
+           COMPONENT_TRAJECTORY   |
            COMPONENT_NONE;
 
         if (id == 0) {
@@ -456,8 +468,7 @@ void event() {
     if (IsKeyPressed(KEY_P)) pause = !pause;
 }
 
-// perfect elasstic impact(after all, it's ideal gas...)
-void particle_collide(size_t a, size_t b) {
+void perfect_elasstic_impact(size_t a, size_t b) {
     Vector3 Pa = {Px.items[a], Py.items[a], Pz.items[a]};
     Vector3 Pb = {Px.items[b], Py.items[b], Pz.items[b]};
     Vector3 delta       = vec_sub(Pb, Pa);
@@ -485,18 +496,27 @@ void particle_collide(size_t a, size_t b) {
     Vy.items[b] = Vb.y;
     Vz.items[b] = Vb.z;
 }
-
-void particle_collide_sys() {
-    TODO("");
+void particle_collide_sys(size_t id1, char* option) {
+    UNUSED(option);
+    size_t self_cell_id = da_at(&grid_id,id1);
+    CellId neighbor_cell = neighbor_cells[self_cell_id];
+    for(size_t i = 0; i < neighbor_cell.count; ++i) {
+        size_t other_cell_id = da_at(&neighbor_cell, i);
+        Cell other_cell = grid[other_cell_id];
+        for(size_t j = 0; j < other_cell.count; ++j) {
+            size_t id2 = da_at(&other_cell, j);
+            if (id1 <= id2) continue;
+            perfect_elasstic_impact(id1, id2);
+        }
+    }   
 }
-
-void box_collide(size_t p, Box *box) {
+void box_collide_sys(size_t p, Box *box) {
     if ((Px.items[p]-PARTICLE_RADIUS < box->min.x && Vx.items[p] < 0) || (Px.items[p]+PARTICLE_RADIUS > box->max.x && Vx.items[p] > 0)) Vx.items[p] = -Vx.items[p];
     if ((Py.items[p]-PARTICLE_RADIUS < box->min.y && Vy.items[p] < 0) || (Py.items[p]+PARTICLE_RADIUS > box->max.y && Vy.items[p] > 0)) Vy.items[p] = -Vy.items[p];
     if ((Pz.items[p]-PARTICLE_RADIUS < box->min.z && Vz.items[p] < 0) || (Pz.items[p]+PARTICLE_RADIUS > box->max.z && Vz.items[p] > 0)) Vz.items[p] = -Vz.items[p];
 }
 
-void box_collide_sys() {
+void box_collide_sys_sys() {
     TODO("");
     // TODO("Add box merge?");
 }
@@ -505,7 +525,7 @@ void movement_sys() {
     TODO("");    
 }
 
-void position_update(size_t id, float dt) {
+void position_sys(size_t id, float dt) {
     ComponentTag allow_tags =
         COMPONENT_POSITION   |
         COMPONENT_VELOCITY   |
@@ -518,30 +538,41 @@ void position_update(size_t id, float dt) {
     Py.items[id] = Py.items[id] + Vy.items[id] * dt;
     Pz.items[id] = Pz.items[id] + Vz.items[id] * dt;
 }
-void velocity_update(size_t id1, float dt) {
-    // maybe add acceration like gravity?
-    UNUSED(dt);
-    
-    // wall collision
-    box_collide(id1, wall);
+void velocity_sys(size_t id, float dt) {
 
-    // particle-particle collision
-    size_t self_cell_id = da_at(&grid_id,id1);
-    CellId neighbor_cell = neighbor_cells[self_cell_id];
-    for(size_t i = 0; i < neighbor_cell.count; ++i) {
-        size_t other_cell_id = da_at(&neighbor_cell, i);
-        Cell other_cell = grid[other_cell_id];
-        for(size_t j = 0; j < other_cell.count; ++j) {
-            size_t id2 = da_at(&other_cell, j);
-            if (id1 <= id2) continue;
-            particle_collide(id1, id2);
-        }
-        
-    }   
+    box_collide_sys(id, wall);
+    particle_collide_sys(id, NULL);
+    
+    // maybe add acceration
+    Vx.items[id] = Vx.items[id] + Ax.items[id] * dt;
+    Vy.items[id] = Vy.items[id] + Ay.items[id] * dt;
+    Vz.items[id] = Vz.items[id] + Az.items[id] * dt;
+}
+
+void gravity_sys(size_t id1) {
+    for (size_t id2 = 0; id2 < id1; ++id2) {
+        float P_21_x = Px.items[id2] - Px.items[id1];
+        float P_21_y = Py.items[id2] - Py.items[id1];
+        float P_21_z = Pz.items[id2] - Pz.items[id1];
+        float r = sqrtf(P_21_x*P_21_x + P_21_y*P_21_y+P_21_z*P_21_z);
+        float r3 = r * r * r;
+        Ax.items[id1] =  P_21_x / r3 * M.items[id2];
+        Ay.items[id1] =  P_21_y / r3 * M.items[id2];
+        Az.items[id1] =  P_21_z / r3 * M.items[id2];
+        Ax.items[id2] = -P_21_x / r3 * M.items[id1];
+        Ay.items[id2] = -P_21_y / r3 * M.items[id1];
+        Az.items[id2] = -P_21_z / r3 * M.items[id1];
+        Az.items[id2] = -P_21_z / r3 * M.items[id1];
+     }
+ }
+
+void acceleration_sys(size_t id, float dt) {
+    UNUSED(dt);
+    gravity_sys(id);
 }
 
 size_t trajectory_count = 0;
-void trajectory_update(size_t id, float dt) {
+void trajectory_sys(size_t id, float dt) {
     UNUSED(dt); // maybe setting longer duration?
     ComponentTag allow_tags = COMPONENT_TRAJECTORY; 
     if(!ENTITY_HAS(id, allow_tags)) return;
@@ -564,9 +595,10 @@ void GameFrame() {
     // update through all entity
     if (dt < 0.1 && !pause) { // also pause when frame block
         for (size_t id = 0; id < entity.count; ++id) {
-            position_update  (id, dt);
-            trajectory_update(id, dt);
-            velocity_update  (id, dt);
+            position_sys  (id, dt);
+            velocity_sys  (id, dt);
+            acceleration_sys(id, dt); 
+            trajectory_sys(id, dt);
         }
         trajectory_count++;
 
@@ -586,10 +618,13 @@ void GameFrame() {
     // Panel
     analysis(); // add some counter state later 
     DrawText("Ideal Gas Simulator", 20, 20, 20, WHITE);
-    DrawText(TextFormat("<V2> = %.2f", statistic.v_square_avg), 20, 50, 20, WHITE);
-    DrawText(TextFormat("<V>  = %.2f", statistic.v_avg       ), 20, 80, 20, WHITE);
+    // DrawText(TextFormat("<V2> = %.2f", statistic.v_square_avg), 20, 50, 20, WHITE);
+    // DrawText(TextFormat("<V>  = %.2f", statistic.v_avg       ), 20, 80, 20, WHITE);
     bin_render( vel_bin, (Vector2) {20, 150}, PANEL_WIDTH, 300);
     bin_render(vel2_bin, (Vector2) {20, 240}, PANEL_WIDTH, 300);
+    
+    DrawText(TextFormat("<A0>  = %.2f", sqrtf(Ax.items[0]*Ax.items[0] + Ay.items[0]*Ay.items[0]+Az.items[0]*Az.items[0])), 20, 50, 20, WHITE);
+    DrawText(TextFormat("<A1>  = %.2f", sqrtf(Ax.items[1]*Ax.items[1] + Ay.items[1]*Ay.items[1]+Az.items[1]*Az.items[1])), 20, 80, 20, WHITE);
     EndDrawing();
 }
 
